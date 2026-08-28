@@ -1,0 +1,79 @@
+{
+  "1_string_simple": "Bonjour le monde",
+
+  "5_number_entier_positif": 42,
+  "6_number_entier_negatif": -17,
+  "7_number_decimal": 3.14159,
+  "8_number_decimal_negatif": -0.001,
+  "9_number_notation_scientifique": 6.022e23,
+  "10_number_notation_scientifique_negative": 1.6e-19,
+  "11_number_zero": 0,
+
+  "12_boolean_true": true,
+  "13_boolean_false": false,
+
+  "14_null_value": null,
+
+  "15_array_vide": [],
+  "16_array_de_nombres": [1, 2, 3, 4, 5],
+  "17_array_de_strings": ["pomme", "banane", "cerise"],
+  "18_array_mixte": [1, "deux", true, null, 5.5],
+  "19_array_de_tableaux": [
+    [1, 2, 3],
+    [4, 5, 6],
+    [7, 8, 9]
+  ],
+  "20_array_d_objets": [
+    { "id": 1, "nom": "Alice" },
+    { "id": 2, "nom": "Bob" }
+  ],
+
+  "21_object_vide": {},
+  "22_object_simple": {
+    "cle1": "valeur1",
+    "cle2": "valeur2"
+  },
+  "23_object_imbrique": {
+    "personne": {
+      "nom": "Dupont",
+      "prenom": "Jean",
+      "age": 35,
+      "adresse": {
+        "rue": "12 rue des Lilas",
+        "ville": "Toulouse",
+        "code_postal": "31000",
+        "pays": "France"
+      },
+      "actif": true,
+      "email_secondaire": null,
+      "telephones": ["0102030405", "0607080910"]
+    }
+  },
+
+  "24_exemple_complet_realiste": {
+    "id_commande": "CMD-2026-0042",
+    "date": "2026-07-26T14:30:00Z",
+    "client": {
+      "nom": "Martin",
+      "age": 29,
+      "membre_premium": false
+    },
+    "articles": [
+      {
+        "nom": "Clavier m\u00e9canique",
+        "prix": 79.99,
+        "quantite": 1,
+        "en_stock": true
+      },
+      {
+        "nom": "Souris sans fil",
+        "prix": 24.50,
+        "quantite": 2,
+        "en_stock": false
+      }
+    ],
+    "total": 128.99,
+    "coupon_applique": null,
+    "tags": ["informatique", "peripheriques", "promo"]
+  }
+}
