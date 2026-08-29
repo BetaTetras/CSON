@@ -64,6 +64,7 @@ int _strcmp(char* str1,char* str2);
 int _strchr(char* str,char c);
 int _strcpybxy(char **dest, char *src, int x, int y);
 int _strchrxt(char * str,char x,int avoid);
+int stringToInt(char* str,int* res);
 
 void debug();
 
@@ -99,19 +100,46 @@ int main(int argc, char *argv[]){
             json_root.root.value = NULL;
         break;
         case JSON_BOOL:
-            str
+            if(_strcmp(json_str,"true") == 0){
+                json_root.root.value.integer = 1;
+            }else if(_strcmp(json_str,"false") == 0){
+                json_root.root.value.integer = 0;
+            }else{
+                json_root.root.value = NULL;
+                json_root.root.type = JSON_ERROR;
+            }
         break;
         case JSON_NUMBER:
-            printf("JSON_NUMBER\n");
+            int tmp_int = stringToInt(json_str,&state);
+            if(state == 1){
+                json_root.root.value = NULL;
+                json_root.root.type = JSON_ERROR;
+                break;
+            }
+            json_root.root.value.integer = tmp_int;
         break;
         case JSON_STRING:
-            printf("JSON_STRING\n");
+            int x = _strchr(json_str,'"');
+            int y = _strchrxt(json_str,'"',1);
+            if(x == -1 || y == -1){
+                json_root.root.type = JSON_ERROR;
+                json_root.root.value = NULL;
+                break;
+            }
+            char* tmp_str;
+            state = _strcpybxy(&tmp_str,json_str,x,y);
+            if(state == 1){
+                json_root.root.value = NULL;
+                json_root.root.type = JSON_ERROR;
+                break;
+            }
+            json_root.root.type.string = tmp_str;
         break;
         case JSON_ARRAY:
             printf("JSON_ARRAY\n");
         break;
         case JSON_OBJECT:
-            printf("JSON_OBJECT\n");
+            // A faire -> récursion
         break;
         case JSON_DECIMAL:
             printf("JSON_DECIMAL\n");
@@ -209,7 +237,11 @@ JsonType getType(char* json){
             return JSON_BOOL;
         break;
         case '-':
-            return JSON_DECIMAL;
+            if(_strchr(json,'.') > 0){
+                return JSON_DECIMAL;
+            }else{
+                return JSON_NUMBER;
+            }
         break;
         case 'n':
             return JSON_NULL;
@@ -224,7 +256,12 @@ JsonType getType(char* json){
             return JSON_OBJECT;
         break;
         default:
-            return JSON_NUMBER;
+            if(_strchr(json,'.') > 0){
+                return JSON_DECIMAL;
+            }else{
+                return JSON_NUMBER;
+            }
+        break;
     }
     return JSON_ERROR;
 }
@@ -310,6 +347,40 @@ int _strchrxt(char * str,char x,int avoid){
         }
     }   
     return -1;
+}
+
+int stringToInt(char* str,int* res){
+    if(str == NULL){
+        return 1;
+    }
+    int result = 0;
+    int boolNeg = 0;
+    int i = 0;
+    int len = (int)_strlen(str);
+    if (len == 0) {
+        return 1;
+    }
+
+    if(str[len-1] == '\n'){
+        len--;
+    } 
+    if(str[0] == '-') {
+        boolNeg = 1;
+        i++;
+    }
+
+    for(; i < len; i++){
+        if(str[i] < '0' || str[i] > '9'){
+            return 1; // caractère invalide
+        }
+        result = result * 10 + (str[i] - '0');
+    }
+    if(boolNeg == 1){
+        *res = -result;
+    }else{
+        *res = result;
+    }
+    return 0;
 }
 
 ////////////////////////////////////////////////////
