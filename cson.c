@@ -80,19 +80,56 @@ int _strcpy(char** dest,char* src);
 int stringToInt(char* str,int* res);
 int stringToDouble(char* str, double* res);
 
-
 void debug();
 
 int main(int argc, char *argv[]){
-    JsonValue test;
+    FILE* file = fopen("exemple.json", "r");
+    if(file == NULL) {
+        printf("Erreur: impossible d'ouvrir test.json\n");
+        return 1;
+    }
+    printf("✓ Fichier ouvert\n");
 
-    char* json = "\"Hello, world! \"inter string\"";
+    char* json_str = NULL;
+    if(loadJson(&json_str, file) != 0) {
+        printf("Erreur: impossible de charger le JSON\n");
+        fclose(file);
+        return 1;
+    }
+    printf("✓ JSON chargé, taille: %lu\n", _strlen(json_str));
+    fclose(file);
+
+    // Nettoyer les whitespaces
+    long size = _strlen(json_str);
+    printf("Avant nettoyage: %ld chars\n", size);
+    whitespaceCleaner(&json_str, &size);
+    printf("Après nettoyage: %ld chars\n", size);
+
     size_t pos = 0;
-
-    test = parseSTRING(json,&pos);
-
-    printf("%s\n",test.value.string);
-
+    JsonValue result = parseValue(json_str, &pos);
+    printf("Type parsé: %d\n", result.type);
+    
+    if(result.type == JSON_OBJECT) {
+        printf("✓ Parsed object with %d elements\n\n", result.value.object->nbOfElement);
+        
+        for(int i = 0; i < result.value.object->nbOfElement; i++) {
+            JsonPair pair = result.value.object->listeOfPair[i];
+            printf("Key %d: %s (Type: ", i+1, pair.key);
+            
+            switch(pair.value.type) {
+                case JSON_STRING: printf("STRING)\n"); break;
+                case JSON_NUMBER: printf("NUMBER: %d)\n", pair.value.value.integer); break;
+                case JSON_DECIMAL: printf("DECIMAL: %.6f)\n", pair.value.value.decimal); break;
+                case JSON_BOOL: printf("BOOL: %s)\n", pair.value.value.integer ? "true" : "false"); break;
+                case JSON_NULL: printf("NULL)\n"); break;
+                case JSON_ARRAY: printf("ARRAY with %d elements)\n", pair.value.value.array->nbOfElement); break;
+                case JSON_OBJECT: printf("OBJECT with %d elements)\n", pair.value.value.object->nbOfElement); break;
+                default: printf("ERROR)\n");
+            }
+        }
+    }
+    
+    free(json_str);
     return 0;
 }
 
@@ -102,82 +139,87 @@ JsonValue parseOBJ(char* json_str, size_t* position){
 
     JsonValue obj_value;
     obj_value.type = JSON_OBJECT;
-    obj_value.value.object = (JsonObject){0};
-    obj_value.value.object.listeOfPair = (JsonPair*)calloc(10,sizeof(JsonPair));
+    obj_value.value.object = (JsonObject*)malloc(sizeof(JsonObject));
+    obj_value.value.object->nbOfElement = 0;
+    obj_value.value.object->listeOfPair = (JsonPair*)calloc(10, sizeof(JsonPair));
 
     JsonType targeted_type;
     JsonPair buffeur_pair;
     JsonValue buffeur_value;
 
     int NumberOfElement = 0;
-    for(size_t index = *position+1;index<size;index++){
+    size_t index;
+    for(index = *position+1; index<size;){
         if(json_str[index] == '}'){
             break;
         }else if(json_str[index] == ','){
+            index++;
             continue;
         }
 
-        if(capacity >= NumberOfElement){
+        if(capacity <= NumberOfElement){
             capacity *= 2;
-            obj_value.value.object.listeOfPair = (JsonPair*)realloc(
-                obj_value.value.object.listeOfPair, 
+            obj_value.value.object->listeOfPair = (JsonPair*)realloc(
+                obj_value.value.object->listeOfPair, 
                 capacity * sizeof(JsonPair)
             );
         }
 
-        buffeur_value = parseSTRING(json_str,&index);
-        _strcpy(buffeur_pair.key,buffeur_value.value.string);
+        buffeur_pair.key = NULL;
 
-        index ++;
+        buffeur_value = parseSTRING(json_str, &index);
+        _strcpy(&buffeur_pair.key, buffeur_value.value.string);
 
-        targeted_type = getType(json_str,index);
+        index++;
+
+        targeted_type = getType(json_str, index);
         switch(targeted_type){
             case JSON_NUMBER:
-                buffeur_pair.value = parseNUMBER(json_str,&index);
-                obj_value.value.object.listeOfPair[NumberOfElement] = buffeur_pair;
+                buffeur_pair.value = parseNUMBER(json_str, &index);
+                obj_value.value.object->listeOfPair[NumberOfElement] = buffeur_pair;
                 NumberOfElement++;
             break;
             case JSON_BOOL:
-                buffeur_pair.value = parseBOOL(json_str,&index);
-                obj_value.value.object.listeOfPair[NumberOfElement] = buffeur_pair;
+                buffeur_pair.value = parseBOOL(json_str, &index);
+                obj_value.value.object->listeOfPair[NumberOfElement] = buffeur_pair;
                 NumberOfElement++;
             break;
             case JSON_DECIMAL:
-                buffeur_pair.value = parseDECIMAL(json_str,&index);
-                obj_value.value.object.listeOfPair[NumberOfElement] = buffeur_pair;
+                buffeur_pair.value = parseDECIMAL(json_str, &index);
+                obj_value.value.object->listeOfPair[NumberOfElement] = buffeur_pair;
                 NumberOfElement++;
             break;
             case JSON_ERROR:
-                _strcpy(obj_value.value.object.listeOfPair[NumberOfElement].key,"ERROR");
-                obj_value.value.object.listeOfPair[NumberOfElement].value.value.integer = 0;
-                obj_value.value.object.listeOfPair[NumberOfElement].value.type = JSON_ERROR;
+                _strcpy(&obj_value.value.object->listeOfPair[NumberOfElement].key, "ERROR");
+                obj_value.value.object->listeOfPair[NumberOfElement].value.value.integer = 0;
+                obj_value.value.object->listeOfPair[NumberOfElement].value.type = JSON_ERROR;
                 NumberOfElement++;
             break;
             case JSON_NULL:
-                buffeur_pair.value = parseNULL(json_str,&index);
-                obj_value.value.object.listeOfPair[NumberOfElement] = buffeur_pair;
+                buffeur_pair.value = parseNULL(json_str, &index);
+                obj_value.value.object->listeOfPair[NumberOfElement] = buffeur_pair;
                 NumberOfElement++;
             break;
             case JSON_STRING:
-                buffeur_pair.value = parseSTRING(json_str,&index);
-                obj_value.value.object.listeOfPair[NumberOfElement] = buffeur_pair;
+                buffeur_pair.value = parseSTRING(json_str, &index);
+                obj_value.value.object->listeOfPair[NumberOfElement] = buffeur_pair;
                 NumberOfElement++;
             break;
             case JSON_ARRAY:
-                buffeur_pair.value = parseARRAY(json_str,&index);
-                obj_value.value.object.listeOfPair[NumberOfElement] = buffeur_pair;
+                buffeur_pair.value = parseARRAY(json_str, &index);
+                obj_value.value.object->listeOfPair[NumberOfElement] = buffeur_pair;
                 NumberOfElement++;
             break;
             case JSON_OBJECT:
-                buffeur_pair.value = parseOBJ(json_str,&index);
-                obj_value.value.object.listeOfPair[NumberOfElement] = buffeur_pair;
+                buffeur_pair.value = parseOBJ(json_str, &index);
+                obj_value.value.object->listeOfPair[NumberOfElement] = buffeur_pair;
                 NumberOfElement++;
             break;
         }
     }
     
     *position = index + 1;
-    obj_value.object.nbOfElement = NumberOfElement;
+    obj_value.value.object->nbOfElement = NumberOfElement;
     free(buffeur_value.value.string);
     return obj_value;
 }
@@ -188,69 +230,72 @@ JsonValue parseARRAY(char* json_str, size_t* position){
 
     JsonValue ary_value;
     ary_value.type = JSON_ARRAY;
-    ary_value.value.array = (JsonArray){0};
-    ary_value.value.array.listeOfValue = (JsonValue*)calloc(capacity, sizeof(JsonValue));
+    ary_value.value.array = (JsonArray*)malloc(sizeof(JsonArray));
+    ary_value.value.array->nbOfElement = 0;
+    ary_value.value.array->listeOfValue = (JsonValue*)calloc(capacity, sizeof(JsonValue));
 
     
     JsonType targeted_type;
     JsonValue buffeur;
 
     int NumberOfElement = 0;
-    for(size_t index = *position+1;index<size;index++){
+    size_t index;
+    for( index = *position+1; index<size;){
         if(json_str[index] == ']'){
             break;
         }else if(json_str[index] == ','){
+            index++;
             continue;
         }
 
-        if(capacity >= NumberOfElement){
+        if(capacity <= NumberOfElement){
             capacity *= 2;
-            ary_value.value.array.listeOfValue = (JsonValue*)realloc(
-                ary_value.value.array.listeOfValue, 
+            ary_value.value.array->listeOfValue = (JsonValue*)realloc(
+                ary_value.value.array->listeOfValue, 
                 capacity * sizeof(JsonValue)
             );
         }
 
-        targeted_type = getType(json_str,index);
+        targeted_type = getType(json_str, index);
         switch(targeted_type){
             case JSON_NUMBER:
-                buffeur = parseNUMBER(json_str,&index);
-                ary_value.value.array.listeOfValue[NumberOfElement] = buffeur;
+                buffeur = parseNUMBER(json_str, &index);
+                ary_value.value.array->listeOfValue[NumberOfElement] = buffeur;
                 NumberOfElement++;
             break;
             case JSON_BOOL:
-                buffeur = parseBOOL(json_str,&index);
-                ary_value.value.array.listeOfValue[NumberOfElement] = buffeur;
+                buffeur = parseBOOL(json_str, &index);
+                ary_value.value.array->listeOfValue[NumberOfElement] = buffeur;
                 NumberOfElement++;
             break;
             case JSON_DECIMAL:
-                buffeur = parseDECIMAL(json_str,&index);
-                ary_value.value.array.listeOfValue[NumberOfElement] = buffeur;
+                buffeur = parseDECIMAL(json_str, &index);
+                ary_value.value.array->listeOfValue[NumberOfElement] = buffeur;
                 NumberOfElement++;
             break;
             case JSON_ERROR:
-                ary_value.value.array.listeOfValue[NumberOfElement].value.integer = 0;
-                ary_value.value.array.listeOfValue[NumberOfElement].type = JSON_ERROR;
+                ary_value.value.array->listeOfValue[NumberOfElement].value.integer = 0;
+                ary_value.value.array->listeOfValue[NumberOfElement].type = JSON_ERROR;
                 NumberOfElement++;
             break;
             case JSON_NULL:
-                buffeur = parseNULL(json_str,&index);
-                ary_value.value.array.listeOfValue[NumberOfElement] = buffeur;
+                buffeur = parseNULL(json_str, &index);
+                ary_value.value.array->listeOfValue[NumberOfElement] = buffeur;
                 NumberOfElement++;
             break;
             case JSON_STRING:
-                buffeur = parseSTRING(json_str,&index);
-                ary_value.value.array.listeOfValue[NumberOfElement] = buffeur;
+                buffeur = parseSTRING(json_str, &index);
+                ary_value.value.array->listeOfValue[NumberOfElement] = buffeur;
                 NumberOfElement++;
             break;
             case JSON_ARRAY:
-                buffeur = parseARRAY(json_str,&index);
-                ary_value.value.array.listeOfValue[NumberOfElement] = buffeur;
+                buffeur = parseARRAY(json_str, &index);
+                ary_value.value.array->listeOfValue[NumberOfElement] = buffeur;
                 NumberOfElement++;
             break;
             case JSON_OBJECT:
-                buffeur = parseOBJ(json_str,&index);
-                ary_value.value.array.listeOfValue[NumberOfElement] = buffeur;
+                buffeur = parseOBJ(json_str, &index);
+                ary_value.value.array->listeOfValue[NumberOfElement] = buffeur;
                 NumberOfElement++;
             break;
         }
@@ -258,7 +303,7 @@ JsonValue parseARRAY(char* json_str, size_t* position){
     }
 
     *position = index + 1;
-    ary_value.value.array.nbOfElement = NumberOfElement;
+    ary_value.value.array->nbOfElement = NumberOfElement;
     return ary_value;
 }
 
@@ -266,9 +311,16 @@ JsonValue parseSTRING(char* json_str,size_t* position){
     size_t size = _strlen(json_str);
     JsonValue str_value;
     str_value.type = JSON_STRING;
+    str_value.value.string = NULL;
 
     size_t start = *position;
     size_t end = 0;
+
+    if(json_str[start] != '"') {
+        str_value.type = JSON_ERROR;
+        return str_value;
+    }
+
     for(size_t index = *position+1;index<size;index++){
         if(json_str[index] == '"'){
             if(json_str[index-1] == '\\'){
@@ -280,7 +332,10 @@ JsonValue parseSTRING(char* json_str,size_t* position){
         }
     }
 
-    _strcpybxy(&str_value.value.string,json_str,(int)start+1,(int)end-1);
+    if(end > start) {
+        _strcpybxy(&str_value.value.string, json_str, (int)start+1, (int)end-1);
+    }
+
     *position = end + 1;
     return str_value;
 }
@@ -480,6 +535,7 @@ int whitespaceCleaner(char** str_json,long* size){
 
     // On modifie la taille
     *size = *size - whitespaceCleanedCount;
+    (*str_json)[*size] = '\0';
     return 0;
 }
 
