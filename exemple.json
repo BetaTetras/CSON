@@ -19,6 +19,8 @@
   "test_exponential_small": 1e-100,
   "test_exponential_plus": 2.5e+10,
   "test_exponential_integer_base": 5e3,
+
+  "test_error": lol,
   
   "test_bool_true": true,
   "test_bool_false": false,
@@ -29,6 +31,7 @@
   "test_array_numbers": [1, 2, 3, 4, 5],
   "test_array_decimals": [1.1, 2.2, 3.3],
   "test_array_exponentials": [1e10, 2.5e-5, 3e20],
+  "test_array_with error": [lol, 2.5e-5, 3e20],
   "test_array_strings": ["apple", "banana", "cherry"],
   "test_array_bools": [true, false, true],
   "test_array_nulls": [null, null],
