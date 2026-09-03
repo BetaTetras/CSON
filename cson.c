@@ -9,14 +9,15 @@
 
 // Liste de type que peux prendre un JSON
 typedef enum {
-    JSON_NULL,
-    JSON_BOOL,
-    JSON_NUMBER,
-    JSON_STRING,
-    JSON_ARRAY,
-    JSON_OBJECT,
-    JSON_DECIMAL,
-    JSON_ERROR
+    JSON_NULL,          // NULL
+    JSON_BOOL,          // Integer (0 ou 1)
+    JSON_NUMBER,        // Integer
+    JSON_STRING,        // char*
+    JSON_ARRAY,         // JsonArray
+    JSON_OBJECT,        // JsonObject
+    JSON_DECIMAL,       // double
+    JSON_EXPONENTIAL,   // char*
+    JSON_ERROR          // errreur
 } JsonType;
 
 // Pré-déclaration
@@ -58,6 +59,7 @@ JsonType getType(char* json_str,size_t position);
 long getSize(FILE* file);
 int loadJson(char** dest,FILE* file);
 int whitespaceCleaner(char** str_json,long* size);
+int isEscaped(char* str, size_t position) ;
 
 JsonValue parseOBJ(char* json_str, size_t* position);
 JsonValue parseARRAY(char* json_str, size_t* position);
@@ -66,7 +68,7 @@ JsonValue parseNUMBER(char* json_str,size_t* position);
 JsonValue parseBOOL(char* json_str,size_t* position);
 JsonValue parseNULL(char* json_str,size_t* position);
 JsonValue parseDECIMAL(char* json_str, size_t* position);
-
+JsonValue parseEXPONENTIAL(char* json_str,size_t* position);
 
 JsonValue parseValue(char* json_str,size_t* position);
 
@@ -80,7 +82,7 @@ int _strcpy(char** dest,char* src);
 int stringToInt(char* str,int* res);
 int stringToDouble(char* str, double* res);
 
-void debug();
+void debug(char* str);
 
 int main(int argc, char *argv[]){
     FILE* file = fopen("exemple.json", "r");
@@ -124,6 +126,7 @@ int main(int argc, char *argv[]){
                 case JSON_NULL: printf("NULL)\n"); break;
                 case JSON_ARRAY: printf("ARRAY with %d elements)\n", pair.value.value.array->nbOfElement); break;
                 case JSON_OBJECT: printf("OBJECT with %d elements)\n", pair.value.value.object->nbOfElement); break;
+                case JSON_EXPONENTIAL: printf("EXPONENTIAL: %s)\n", pair.value.value.string); break;
                 default: printf("ERROR)\n");
             }
         }
@@ -169,11 +172,15 @@ JsonValue parseOBJ(char* json_str, size_t* position){
                 obj_value.value.object->listeOfPair, 
                 capacity * sizeof(JsonPair)
             );
+            if(obj_value.value.object->listeOfPair == NULL){
+                free(obj_value.value.object->listeOfPair);
+                obj_value.type = JSON_ERROR;
+                return obj_value;
+            }
         }
 
-        buffeur_pair.key = NULL;
-
         buffeur_value = parseSTRING(json_str, &index);
+        buffeur_pair.key = NULL;
         _strcpy(&buffeur_pair.key, buffeur_value.value.string);
 
         index++;
@@ -221,12 +228,16 @@ JsonValue parseOBJ(char* json_str, size_t* position){
                 obj_value.value.object->listeOfPair[NumberOfElement] = buffeur_pair;
                 NumberOfElement++;
             break;
+            case JSON_EXPONENTIAL:
+                buffeur_pair.value = parseEXPONENTIAL(json_str, &index);  // ← index avance ici
+                obj_value.value.object->listeOfPair[NumberOfElement] = buffeur_pair;
+                NumberOfElement++;
+            break;
         }
     }
     
     *position = index + 1;
     obj_value.value.object->nbOfElement = NumberOfElement;
-    free(buffeur_value.value.string);
     return obj_value;
 }
 
@@ -265,6 +276,11 @@ JsonValue parseARRAY(char* json_str, size_t* position){
                 ary_value.value.array->listeOfValue, 
                 capacity * sizeof(JsonValue)
             );
+            if(ary_value.value.array->listeOfValue == NULL){
+                free(ary_value.value.array->listeOfValue);
+                ary_value.type = JSON_ERROR;
+                return ary_value;
+            }
         }
 
         targeted_type = getType(json_str, index);
@@ -309,6 +325,11 @@ JsonValue parseARRAY(char* json_str, size_t* position){
                 ary_value.value.array->listeOfValue[NumberOfElement] = buffeur;
                 NumberOfElement++;
             break;
+            case JSON_EXPONENTIAL:
+                buffeur = parseEXPONENTIAL(json_str, &index);  // ← index avance ici
+                ary_value.value.array->listeOfValue[NumberOfElement] = buffeur;
+                NumberOfElement++;
+            break;
         }
 
     }
@@ -330,22 +351,24 @@ JsonValue parseSTRING(char* json_str,size_t* position){
     str_value.value.string = NULL;
 
     size_t start = *position;
-    size_t end = 0;
 
-    if(json_str[start] != '"') {
+    if(start >= size || json_str[start] != '"') {
         str_value.type = JSON_ERROR;
         return str_value;
     }
 
-    for(size_t index = *position+1;index<size;index++){
-        if(json_str[index] == '"'){
-            if(json_str[index-1] == '\\'){
-                continue;
-            }else{
-                end = index;
-                break;
-            }
+    size_t end = start;
+
+    for(size_t index = start + 1; index < size; index++){
+        if(json_str[index] == '"' && !isEscaped(json_str, index)){
+            end = index;
+            break;
         }
+    }
+
+    if(end == start){
+        str_value.type = JSON_ERROR;
+        return str_value;
     }
 
     if(end == start + 1) {
@@ -356,6 +379,65 @@ JsonValue parseSTRING(char* json_str,size_t* position){
 
     *position = end + 1;
     return str_value;
+}
+
+JsonValue parseEXPONENTIAL(char* json_str,size_t* position){
+    debug("parseEXPONENTIAL");
+    size_t size = _strlen(json_str);
+    JsonValue exp_value;
+    if(size == (size_t)-1){
+        exp_value.type = JSON_ERROR;
+        return exp_value;
+    }
+
+    exp_value.type = JSON_EXPONENTIAL;
+    exp_value.value.string = (char*)calloc(64,sizeof(char));
+    int numberOfDigit = 0;
+    int numberOfDot = 0;
+    int NumberOfOperator = 0;
+    
+    for(size_t i = *position;i<size;i++){
+        if(numberOfDot > 1 || NumberOfOperator > 1 ){
+            exp_value.type = JSON_ERROR;
+            return exp_value;
+        }
+        if((json_str[i] >= '0' && json_str[i] <= '9') || json_str[i] == '.' || json_str[i] == '-' || json_str[i] == '+'){
+            if(json_str[i] == '-' || json_str[i] == '+' ){
+                NumberOfOperator++;
+            }else if(json_str[i] == '.'){
+                numberOfDot ++;
+            }
+            exp_value.value.string[numberOfDigit] = json_str[i];
+            numberOfDigit++;
+        }
+        else if(json_str[i] == 'e' || json_str[i] == 'E'){
+            if(i > 0 && (json_str[i-1] >= '0' && json_str[i-1] <= '9')){
+                if(i+1 < size && ((json_str[i+1] >= '0' && json_str[i+1] <= '9') ||
+                                   json_str[i+1] == '-' || json_str[i+1] == '+')){
+                    exp_value.value.string[numberOfDigit] = json_str[i];
+                    numberOfDigit++;
+                }else{
+                    exp_value.type = JSON_ERROR;
+                    free(exp_value.value.string);
+                    return exp_value;
+                }
+            }else{
+                exp_value.type = JSON_ERROR;
+                free(exp_value.value.string);
+                return exp_value;
+            }
+        }
+        else if(json_str[i] == ']' || json_str[i] == '}' || json_str[i] == ','){
+            break;
+        }
+        else{
+            break;
+        }
+    }
+    exp_value.value.string[numberOfDigit] = '\0';
+
+    *position = *position + numberOfDigit;  
+    return exp_value;
 }
 
 JsonValue parseNUMBER(char* json_str,size_t* position){
@@ -490,6 +572,8 @@ JsonValue parseValue(char* json_str, size_t* position) {
             return parseARRAY(json_str, position);
         case JSON_OBJECT:
             return parseOBJ(json_str, position);
+        case JSON_EXPONENTIAL:
+            return parseEXPONENTIAL(json_str, position);
         default: {
             JsonValue error_value;
             error_value.type = JSON_ERROR;
@@ -527,49 +611,34 @@ int loadJson(char** dest,FILE* file){
     return 0;
 }
 
-int whitespaceCleaner(char** str_json,long* size){
+int whitespaceCleaner(char** str_json, long* size){
     int whitespaceCleanedCount = 0;
-    int index = 0;
-    int IsInsideQuote = 0;  
+    int IsInsideQuote = 0;
 
-    for(long i = 0 ;i<(*size);i++){
+    for(long i = 0; i < *size; i++){
         char c = (*str_json)[i];
 
-        // Vue que l'on ne veux pas modifiée l'intérieur des string on vérifie si c'est pas
-        // string qu'on essaye de netoyée
-        if(c == '"'){
-            if(IsInsideQuote == 1){
-                if((*str_json)[i-1] == '\\'){
-                    continue;
-                }else{
-                    IsInsideQuote = 0;
-                }
-            }else{
-                IsInsideQuote = 1;
-            }
+        if(c == '"' && !isEscaped(*str_json, i)){
+            IsInsideQuote = !IsInsideQuote;
         }
-        // Si le char se trouve entre '"' alors il est dans une string donc on saute
-        if(IsInsideQuote == 1){
+
+        if(IsInsideQuote){
             continue;
         }
-        index = i;
-        //Si on trouveun whitespace
+
         if(c == '\n' || c == '\t' || c == '\r' || c == ' '){
-            //on décale tout les char pour suppr de whitespace
-            while(index<*size-1){
-                (*str_json)[index] = (*str_json)[index+1];
-                index++;
+            for(long j = i; j < *size; j++){
+                (*str_json)[j] = (*str_json)[j + 1];
             }
-            // On compte le nombre de char suppr pour modifiée la taille du fichier
-            whitespaceCleanedCount ++;
-            //On résychronise i
+
+            (*size)--;
+            (*str_json)[*size] = '\0';
+
+            whitespaceCleanedCount++;
             i--;
         }
     }
 
-    // On modifie la taille
-    *size = *size - whitespaceCleanedCount;
-    (*str_json)[*size] = '\0';
     return 0;
 }
 
@@ -581,13 +650,6 @@ JsonType getType(char* json_str,size_t position){
         case 't':
         case 'f':
             return JSON_BOOL;
-        break;
-        case '-':
-            if(_strchr(json_str,'.') > 0){
-                return JSON_DECIMAL;
-            }else{
-                return JSON_NUMBER;
-            }
         break;
         case 'n':
             return JSON_NULL;
@@ -601,15 +663,45 @@ JsonType getType(char* json_str,size_t position){
         case '{':
             return JSON_OBJECT;
         break;
-        default:
-            if(_strchr(&json_str[position], '.') > 0){
+                case '-':
+        case '0' ... '9' : {
+            size_t index = position;
+            size_t size = _strlen(json_str);
+            if(size == (size_t)-1){
+                return JSON_ERROR;
+            }
+            int boolEXP = 0;
+            int boolDEC = 0;
+
+            if(json_str[index] == '-'){
+                index++;
+            }
+            while(index < size && 
+                  ((json_str[index] >= '0' && json_str[index] <= '9') ||
+                   json_str[index] == '.' ||
+                   json_str[index] == 'e' || json_str[index] == 'E' ||
+                   json_str[index] == '+' || json_str[index] == '-')) {
+
+                if(json_str[index] == '.'){
+                    boolDEC = 1;
+                }
+                if(json_str[index] == 'e' || json_str[index] == 'E'){
+                    boolEXP = 1;
+                }
+                index++;
+            }
+            if(boolEXP){
+                return JSON_EXPONENTIAL;
+            }else if(boolDEC){
                 return JSON_DECIMAL;
             }else{
                 return JSON_NUMBER;
             }
+        }
         break;
+        default:
+            return JSON_ERROR;
     }
-    return JSON_ERROR;
 }
 
 long getSize(FILE* file){
@@ -617,6 +709,17 @@ long getSize(FILE* file){
     long size = ftell(file);
     rewind(file);
     return size;
+}
+
+int isEscaped(char* str, size_t position) {
+    size_t count = 0;
+
+    while (position > 0 && str[position - 1] == '\\') {
+        count++;
+        position--;
+    }
+
+    return count % 2 != 0;
 }
 
 ////////////////////////////////////////////////////
