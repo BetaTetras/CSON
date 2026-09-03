@@ -134,10 +134,15 @@ int main(int argc, char *argv[]){
 }
 
 JsonValue parseOBJ(char* json_str, size_t* position){
+    debug("parseOBJ");
     size_t size = _strlen(json_str);
-    size_t capacity = 10;
-
     JsonValue obj_value;
+    if(size == (size_t)-1){
+        obj_value.type = JSON_ERROR;
+        return obj_value;
+    }
+
+    size_t capacity = 10;
     obj_value.type = JSON_OBJECT;
     obj_value.value.object = (JsonObject*)malloc(sizeof(JsonObject));
     obj_value.value.object->nbOfElement = 0;
@@ -146,6 +151,7 @@ JsonValue parseOBJ(char* json_str, size_t* position){
     JsonType targeted_type;
     JsonPair buffeur_pair;
     JsonValue buffeur_value;
+    buffeur_value.value.string = NULL;
 
     int NumberOfElement = 0;
     size_t index;
@@ -225,10 +231,15 @@ JsonValue parseOBJ(char* json_str, size_t* position){
 }
 
 JsonValue parseARRAY(char* json_str, size_t* position){
+    debug("parseARRAY");
     size_t size = _strlen(json_str);
-    size_t capacity = 10;
-
     JsonValue ary_value;
+    if(size == (size_t)-1){
+        ary_value.type = JSON_ERROR;
+        return ary_value;
+    }
+
+    size_t capacity = 10;
     ary_value.type = JSON_ARRAY;
     ary_value.value.array = (JsonArray*)malloc(sizeof(JsonArray));
     ary_value.value.array->nbOfElement = 0;
@@ -308,8 +319,13 @@ JsonValue parseARRAY(char* json_str, size_t* position){
 }
 
 JsonValue parseSTRING(char* json_str,size_t* position){
+    debug("parseSTRING");
     size_t size = _strlen(json_str);
     JsonValue str_value;
+    if(size == (size_t)-1){
+        str_value.type = JSON_ERROR;
+        return str_value;
+    }
     str_value.type = JSON_STRING;
     str_value.value.string = NULL;
 
@@ -332,7 +348,9 @@ JsonValue parseSTRING(char* json_str,size_t* position){
         }
     }
 
-    if(end > start) {
+    if(end == start + 1) {
+        _strcpy(&str_value.value.string, "");
+    }else if(end > start) {
         _strcpybxy(&str_value.value.string, json_str, (int)start+1, (int)end-1);
     }
 
@@ -341,13 +359,20 @@ JsonValue parseSTRING(char* json_str,size_t* position){
 }
 
 JsonValue parseNUMBER(char* json_str,size_t* position){
+    debug("parseNUMBER");
+    size_t size = _strlen(json_str);
+    JsonValue nbr_value;
+    if(size == (size_t)-1){
+        nbr_value.type = JSON_ERROR;
+        return nbr_value;
+    }
+
     char* number_str = (char*)calloc(64, sizeof(char));
     int number_int;
     size_t numberOfDigit = 0;
-    size_t size = _strlen(json_str);
     int state;
 
-    JsonValue nbr_value;
+    
     nbr_value.type = JSON_NUMBER;
 
     for(size_t index=*position;index<size;index++){
@@ -372,6 +397,7 @@ JsonValue parseNUMBER(char* json_str,size_t* position){
 }
 
 JsonValue parseBOOL(char* json_str,size_t* position){
+    debug("parseBOOL");
     JsonValue boo_value;
     boo_value.type = JSON_BOOL;
 
@@ -404,13 +430,20 @@ JsonValue parseNULL(char* json_str,size_t* position){
 }
 
 JsonValue parseDECIMAL(char* json_str, size_t* position){
+    debug("parseDECIMAL");
+    size_t size = _strlen(json_str);
+    JsonValue dec_value;
+    if(size == (size_t)-1){
+        dec_value.type = JSON_ERROR;
+        return dec_value;
+    }
+
     char* decimal_str = (char*)calloc(64, sizeof(char));
     double decimal_double;
     size_t numberOfDigit = 0;
-    size_t size = _strlen(json_str);
+    
     int state;
 
-    JsonValue dec_value;
     dec_value.type = JSON_DECIMAL;
 
     for(size_t index = *position; index < size; index++){
@@ -439,6 +472,7 @@ JsonValue parseDECIMAL(char* json_str, size_t* position){
 }
 
 JsonValue parseValue(char* json_str, size_t* position) {
+    debug("parseValue");
     JsonType type = getType(json_str, *position);
     
     switch(type) {
@@ -588,6 +622,9 @@ long getSize(FILE* file){
 ////////////////////////////////////////////////////
 
 size_t _strlen(char* str){
+    if(str == NULL){
+        return -1;
+    }
     size_t i =0;
     while(str[i] != '\0'){
         i++;
@@ -596,8 +633,16 @@ size_t _strlen(char* str){
 }
 
 int _strcmp(char* str1,char* str2){
+    if(str1 == NULL){
+        if(str2 == NULL){
+            return 0;
+        }else{
+            return 1;
+        }
+    }
     size_t size_1 = _strlen(str1);
     size_t size_2 = _strlen(str2);
+
     if(size_1 != size_2){
         return 1;
     }
@@ -610,6 +655,9 @@ int _strcmp(char* str1,char* str2){
 }
 
 int _strchr(char* str,char c){
+    if(str == NULL){
+        return -1;
+    }
     size_t size = _strlen(str);
     for(size_t i = 0;i<size;i++){
         if(str[i] == c){
@@ -621,6 +669,9 @@ int _strchr(char* str,char c){
 
 // String copy between x and y
 int _strcpybxy(char **dest, char *src, int x, int y){
+    if(src == NULL){
+        return 1;
+    }
     int lenSrc = strlen(src);
     if (x < 0 || y >= lenSrc || y < x) {
         return 1;
@@ -648,6 +699,9 @@ int _strcpybxy(char **dest, char *src, int x, int y){
 
 // String reserch x time
 int _strchrxt(char * str,char x,int avoid){
+    if(str == NULL){
+        return -1;
+    }
     int xTime = 0;
     int size = (int)_strlen(str);
     for(int i=0;i<size;i++){
@@ -662,6 +716,9 @@ int _strchrxt(char * str,char x,int avoid){
 }
 
 int _strcpy(char** dest,char* src){
+    if(src == NULL){
+        return 1;
+    }
     size_t size = _strlen(src) + 1;
     if (*dest == NULL) {
         *dest = malloc(size);
@@ -731,10 +788,18 @@ int stringToDouble(char* str, double* res){
 
 ////////////////////////////////////////////////////
 
-void debug(){
+void debug(char* str){
+
     if(DEBUG_VALUE == 1){
-        printf("\033[38;2;255;0;0m");
-        printf("DEBUG!\n");
-        printf("\033[0m");
+        if(str == NULL){
+            printf("\033[38;2;255;0;0m");
+            printf("DEBUG!\n");
+            printf("\033[0m");
+        }else{
+            printf("\033[38;2;255;0;0m");
+            printf("DEBUG : %s\n",str);
+            printf("\033[0m");
+        }
+
     }
 }
