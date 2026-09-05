@@ -16,7 +16,7 @@ typedef enum {
     JSON_OBJECT,        // JsonObject
     JSON_DECIMAL,       // double
     JSON_EXPONENTIAL,   // char*
-    JSON_ERROR          // errreur
+    JSON_ERROR          // erreur
 } JsonType;
 
 // Pré-déclaration
@@ -72,6 +72,9 @@ JsonValue parseDECIMAL(char* json_str, size_t* position);
 JsonValue parseEXPONENTIAL(char* json_str,size_t* position);
 JsonValue parseValue(char* json_str,size_t* position);
 
+int addToArray(JsonArray* ary, JsonValue value);
+int addToObject(JsonObject* obj, char* key, JsonValue value);
+
 void freeJsonValue(JsonValue value);
 void freeObject(JsonObject *obj);
 void freeArray(JsonArray *ary);
@@ -96,6 +99,14 @@ void debug(char* str);
 int main(int argc, char *argv[]) {
     JsonValue json;
     json = initCson(argv[1]);
+
+    JsonValue test; 
+    test.type = JSON_STRING;
+    test.value.string = NULL;
+    _strcpy(&test.value.string,"TEEEEEESSSSTTTTEEEE");
+
+
+    addToObject(json.value.object,"TestADD",test);
 
     printfJsonValue(json);
     printf("\n");
@@ -318,6 +329,46 @@ void printfObject(int* depth,JsonObject obj){
     printfXtab(*depth);
     printf("}\n");
 
+}
+
+//////////////////////////////////////////// add function ////////////////////////////////////////////
+
+int addToObject(JsonObject* obj, char* key, JsonValue value){
+    if(obj == NULL || key == NULL){
+        return 1;
+    }
+
+    JsonPair* newListe = (JsonPair*)realloc(obj->listeOfPair, (obj->nbOfElement + 1) * sizeof(JsonPair));
+    if(newListe == NULL){
+        return 1;
+    }
+    obj->listeOfPair = newListe;
+
+    obj->listeOfPair[obj->nbOfElement].key = NULL;
+    if(_strcpy(&obj->listeOfPair[obj->nbOfElement].key, key) != 0){
+        return 1;
+    }
+    obj->listeOfPair[obj->nbOfElement].value = value;
+    obj->nbOfElement++;
+
+    return 0;
+}
+
+int addToArray(JsonArray* ary, JsonValue value){
+    if(ary == NULL){
+        return 1;
+    }
+
+    JsonValue* newListe = (JsonValue*)realloc(ary->listeOfValue, (ary->nbOfElement + 1) * sizeof(JsonValue));
+    if(newListe == NULL){
+        return 1;
+    }
+    ary->listeOfValue = newListe;
+
+    ary->listeOfValue[ary->nbOfElement] = value;
+    ary->nbOfElement++;
+
+    return 0;
 }
 
 //////////////////////////////////////////// parse function ////////////////////////////////////////////
