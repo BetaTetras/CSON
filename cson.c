@@ -70,8 +70,11 @@ JsonValue parseBOOL(char* json_str,size_t* position);
 JsonValue parseNULL(char* json_str,size_t* position);
 JsonValue parseDECIMAL(char* json_str, size_t* position);
 JsonValue parseEXPONENTIAL(char* json_str,size_t* position);
-
 JsonValue parseValue(char* json_str,size_t* position);
+
+void freeJsonValue(JsonValue value);
+void freeObject(JsonObject *obj);
+void freeArray(JsonArray *ary);
 
 void printfXtab(int x);
 void printfJsonValue(JsonValue value);
@@ -95,6 +98,8 @@ int main(int argc, char *argv[]) {
     json = initCson(argv[1]);
 
     printfJsonValue(json);
+    printf("\n");
+    freeJsonValue(json);
     printf("\n");
 
     return 0;
@@ -279,7 +284,6 @@ void printfObject(int* depth,JsonObject obj){
                 printf("ERROR");
             break;
             case JSON_EXPONENTIAL:{
-                printf("%s",obj.listeOfPair[i].value.value.string);
                 if(obj.listeOfPair[i].value.value.string == NULL){
                     printf("null");
                 }else{
@@ -798,6 +802,96 @@ JsonValue parseValue(char* json_str, size_t* position) {
             return error_value;
         }
     }
+}
+//////////////////////////////////////////// free function ////////////////////////////////////////////
+void freeJsonValue(JsonValue value){
+    switch(value.type){
+        case JSON_BOOL:
+        case JSON_DECIMAL:
+        case JSON_NULL:
+        case JSON_NUMBER:
+        break;
+        case JSON_ERROR:
+        case JSON_STRING:
+        case JSON_EXPONENTIAL:{
+            free(value.value.string);
+        }
+        break;
+        case JSON_OBJECT:{
+            freeObject(value.value.object);
+        }
+        break;
+        case JSON_ARRAY:{
+            freeArray(value.value.array);
+        }
+        break;
+    }
+    debug("free value\n");
+}
+
+void freeObject(JsonObject *obj){
+    if(obj == NULL){
+        return;
+    }
+    for(int i=0;i<obj->nbOfElement;i++){
+        free(obj->listeOfPair[i].key);
+        switch(obj->listeOfPair[i].value.type){
+            case JSON_BOOL:
+            case JSON_DECIMAL:
+            case JSON_NULL:
+            case JSON_NUMBER:
+            break;
+            case JSON_ERROR:
+            case JSON_STRING:
+            case JSON_EXPONENTIAL:{
+                free(obj->listeOfPair[i].value.value.string);
+            }
+            break;
+            case JSON_OBJECT:{
+                freeObject(obj->listeOfPair[i].value.value.object);
+            }
+            break;
+            case JSON_ARRAY:{
+                freeArray(obj->listeOfPair[i].value.value.array);
+            }
+            break;
+        }
+    }
+    free(obj->listeOfPair);
+    free(obj);
+    debug("free obj\n");
+}
+
+void freeArray(JsonArray *ary){
+    if(ary == NULL){
+        return;
+    }
+    for(int i = 0; i < ary->nbOfElement; i++){
+        switch(ary->listeOfValue[i].type){
+            case JSON_BOOL:
+            case JSON_DECIMAL:
+            case JSON_NULL:
+            case JSON_NUMBER:
+            break;
+            case JSON_ERROR:
+            case JSON_STRING:
+            case JSON_EXPONENTIAL:{
+                free(ary->listeOfValue[i].value.string);
+            }
+            break;
+            case JSON_OBJECT:{
+                freeObject(ary->listeOfValue[i].value.object);
+            }
+            break;
+            case JSON_ARRAY:{
+                freeArray(ary->listeOfValue[i].value.array);
+            }
+            break;
+        }
+    }
+    free(ary->listeOfValue);
+    free(ary);
+    debug("free ary\n");
 }
 
 //////////////////////////////////////////// treatment function ////////////////////////////////////////////
