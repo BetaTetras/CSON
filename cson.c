@@ -54,6 +54,7 @@ typedef struct JsonRoot{
     JsonValue root;
 }JsonRoot;
 
+// Initialisée la transcription Text -> JsonValue
 JsonValue initCson(char* path);
 
 JsonType getType(char* json_str,size_t position);
@@ -84,6 +85,10 @@ void printfJsonValue(JsonValue value);
 void printfArray(int* depth, JsonArray ary);
 void printfObject(int* depth, JsonObject obj);
 
+int fprintfJsonValue(FILE* file,JsonValue value);
+void fprintfObject(FILE* file, int* depth, JsonObject obj);
+void fprintfArray(FILE* file, int* depth, JsonArray ary);
+
 size_t _strlen(char* str);
 int _strcmp(char* str1,char* str2);
 int _strchr(char* str,char c);
@@ -109,6 +114,10 @@ int main(int argc, char *argv[]) {
     addToObject(json.value.object,"TestADD",test);
 
     printfJsonValue(json);
+
+    FILE* w_file = fopen("./test.json","w");
+    fprintfJsonValue(w_file,json);
+
     printf("\n");
     freeJsonValue(json);
     printf("\n");
@@ -329,6 +338,199 @@ void printfObject(int* depth,JsonObject obj){
     printfXtab(*depth);
     printf("}\n");
 
+}
+
+//////////////////////////////////////////// fprintf function ////////////////////////////////////////////
+
+void fprintfXtab(FILE* file, int x){
+    for(int i=0;i<x;i++){
+        fprintf(file,"  ");
+    }
+}
+
+int fprintfJsonValue(FILE* file, JsonValue value){
+    int depth = 0;
+    switch(value.type){
+        case JSON_ARRAY:
+            fprintfArray(file,&depth,*value.value.array);
+        break;
+        case JSON_BOOL:{
+            if(value.value.integer == 1){
+                fprintf(file,"true");
+            }else if(value.value.integer == 0){
+                fprintf(file,"false");
+            }else{
+                fprintf(file,"Boolean error");
+            }
+            break;
+        }
+        
+        case JSON_DECIMAL:
+            fprintf(file,"%f",value.value.decimal);
+        break;
+        case JSON_ERROR:
+            fprintf(file,"ERROR");
+        break;
+        case JSON_EXPONENTIAL:
+            fprintf(file,"%s",value.value.string);
+        break;
+        case JSON_NULL:
+            fprintf(file,"null");
+        break;
+        case JSON_NUMBER:
+            fprintf(file,"%d",value.value.integer);
+        break;
+        case JSON_OBJECT:
+            fprintfObject(file,&depth,*value.value.object);
+        break;
+        case JSON_STRING:{
+            if(value.value.string == NULL){
+                fprintf(file,"null");
+            }else{
+                fprintf(file,"\"%s\"",value.value.string);
+            }
+            break;
+        }
+        default:
+            fprintf(file,"error print");
+    }
+    return 0;
+}
+
+void fprintfObject(FILE* file, int* depth, JsonObject obj){
+    size_t numberOfOBJ = (size_t)obj.nbOfElement;
+    fprintf(file,"{\n");
+
+    if(obj.nbOfElement == 0) {
+        fprintfXtab(file,*depth);
+        fprintf(file,"}");
+        return;
+    }
+    (*depth)++;
+    for(size_t i=0;i<numberOfOBJ;i++){
+        
+        fprintfXtab(file,*depth);
+        fprintf(file,"\"%s\": ", obj.listeOfPair[i].key);
+        switch(obj.listeOfPair[i].value.type){
+            case JSON_OBJECT:
+                fprintfObject(file, depth, *obj.listeOfPair[i].value.value.object);
+            break;
+            case JSON_ARRAY:
+                fprintfArray(file, depth, *obj.listeOfPair[i].value.value.array);
+            break;
+            case JSON_BOOL:{
+                if(obj.listeOfPair[i].value.value.integer == 1){
+                    fprintf(file,"true");
+                }else if(obj.listeOfPair[i].value.value.integer == 0){
+                    fprintf(file,"false");
+                }else{
+                    fprintf(file,"Boolean error");
+                }
+            }
+            break;
+            case JSON_DECIMAL:
+                fprintf(file,"%f",obj.listeOfPair[i].value.value.decimal);
+            break;
+            case JSON_ERROR:
+                fprintf(file,"ERROR");
+            break;
+            case JSON_EXPONENTIAL:{
+                if(obj.listeOfPair[i].value.value.string == NULL){
+                    fprintf(file,"null");
+                }else{
+                    fprintf(file,"%s",obj.listeOfPair[i].value.value.string);
+                }
+            }
+            break;
+            case JSON_NULL:
+                fprintf(file,"null");
+            break;
+            case JSON_NUMBER:
+                fprintf(file,"%d",obj.listeOfPair[i].value.value.integer);
+            break;
+            case JSON_STRING:{
+                if(obj.listeOfPair[i].value.value.string == NULL){
+                    fprintf(file,"null");
+                }else{
+                    fprintf(file,"\"%s\"",obj.listeOfPair[i].value.value.string);
+                }
+            }
+            break;
+            default:
+                fprintf(file,"Error reading");
+        }
+        if(i < obj.nbOfElement - 1) {
+            fprintf(file,",");
+        }
+        fprintf(file,"\n");
+    }
+    (*depth)--;
+
+    fprintfXtab(file,*depth);
+    fprintf(file,"}");
+}
+
+void fprintfArray(FILE* file, int* depth, JsonArray ary){
+    size_t numberOfElement = (size_t)ary.nbOfElement;
+    fprintf(file,"[");
+    if(ary.nbOfElement == 0) {
+        fprintf(file,"]");
+        return;
+    }
+    for(size_t i=0;i<numberOfElement;i++){
+        switch(ary.listeOfValue[i].type){
+            case JSON_OBJECT:
+                fprintfObject(file,depth,*ary.listeOfValue[i].value.object);
+            break;
+            case JSON_ARRAY:
+                fprintfArray(file,depth,*ary.listeOfValue[i].value.array);
+            break;
+            case JSON_BOOL:{
+                if(ary.listeOfValue[i].value.integer == 1){
+                    fprintf(file,"true");
+                }else if(ary.listeOfValue[i].value.integer == 0){
+                    fprintf(file,"false");
+                }else{
+                    fprintf(file,"Boolean error");
+                }
+            }
+            break;
+            case JSON_DECIMAL:
+                fprintf(file,"%f",ary.listeOfValue[i].value.decimal);
+            break;
+            case JSON_ERROR:
+                fprintf(file,"ERROR");
+            break;
+            case JSON_EXPONENTIAL:{
+                if(ary.listeOfValue[i].value.string == NULL){
+                    fprintf(file,"null");
+                }else{
+                    fprintf(file,"%s",ary.listeOfValue[i].value.string);
+                }
+            }
+            break;
+            case JSON_NULL:
+                fprintf(file,"null");
+            break;
+            case JSON_NUMBER:
+                fprintf(file,"%d",ary.listeOfValue[i].value.integer);
+            break;
+            case JSON_STRING:{
+                if(ary.listeOfValue[i].value.string == NULL){
+                    fprintf(file,"null");
+                }else{
+                    fprintf(file,"\"%s\"",ary.listeOfValue[i].value.string);
+                }
+            }
+            break;
+            default:
+                fprintf(file,"Error print");
+        }
+        if(i < ary.nbOfElement - 1) {
+            fprintf(file,",");
+        }
+    }
+    fprintf(file,"]");
 }
 
 //////////////////////////////////////////// add function ////////////////////////////////////////////
