@@ -57,12 +57,14 @@ typedef struct JsonRoot{
 // Initialisée la transcription Text -> JsonValue
 JsonValue initCson(char* path);
 
+// Utils
 JsonType getType(char* json_str,size_t position);
 long getSize(FILE* file);
 int loadJson(char** dest,FILE* file);
 int whitespaceCleaner(char** str_json,long* size);
 int isEscaped(char* str, size_t position) ;
 
+// parsing
 JsonValue parseOBJ(char* json_str, size_t* position);
 JsonValue parseARRAY(char* json_str, size_t* position);
 JsonValue parseSTRING(char* json_str,size_t* position);
@@ -73,22 +75,35 @@ JsonValue parseDECIMAL(char* json_str, size_t* position);
 JsonValue parseEXPONENTIAL(char* json_str,size_t* position);
 JsonValue parseValue(char* json_str,size_t* position);
 
-int addToArray(JsonArray* ary, JsonValue value);
-int addToObject(JsonObject* obj, char* key, JsonValue value);
+// modification
+int addToArray(JsonArray* ary, JsonValue value,size_t index);
+int addToObject(JsonObject* obj, char* key, JsonValue value,size_t index);
+int removeToObject(JsonObject* obj, size_t index);
+int removeToArray(JsonArray* ary, size_t index);
+int modifyObject(JsonObject* obj,JsonPair paire,size_t index);
+int modifyArray(JsonArray* ary,JsonValue value,size_t index);
 
+//gets
+JsonValue* getValueFromObject(JsonObject* obj,char* key);
+int getIndexFromObject(JsonObject* obj,char* key);
+
+// frees
 void freeJsonValue(JsonValue value);
 void freeObject(JsonObject *obj);
-void freeArray(JsonArray *ary);
+void freeArray(JsonArray *ary);                 
 
+// printf
 void printfXtab(int x);
 void printfJsonValue(JsonValue value);
 void printfArray(int* depth, JsonArray ary);
 void printfObject(int* depth, JsonObject obj);
 
+// fprintf
 int fprintfJsonValue(FILE* file,JsonValue value);
 void fprintfObject(FILE* file, int* depth, JsonObject obj);
 void fprintfArray(FILE* file, int* depth, JsonArray ary);
 
+// _string.h
 size_t _strlen(char* str);
 int _strcmp(char* str1,char* str2);
 int _strchr(char* str,char c);
@@ -96,6 +111,7 @@ int _strcpybxy(char **dest, char *src, int x, int y);
 int _strchrxt(char * str,char x,int avoid);
 int _strcpy(char** dest,char* src);
 
+// conversion to str to x
 int stringToInt(char* str,int* res);
 int stringToDouble(char* str, double* res);
 
@@ -104,25 +120,36 @@ void debug(char* str);
 int main(int argc, char *argv[]) {
     JsonValue json;
     json = initCson(argv[1]);
+    int state;
 
-    JsonValue test; 
-    test.type = JSON_STRING;
-    test.value.string = NULL;
-    _strcpy(&test.value.string,"TEEEEEESSSSTTTTEEEE");
-
-
-    addToObject(json.value.object,"TestADD",test);
-
+    printf("===================== SANS MODIF =====================\n");
+    printfJsonValue(json);
+    printf("===================== AVEC ADD =====================\n");
+    JsonValue test;
+    test.type = JSON_NUMBER;
+    test.value.integer = 100;
+    state = addToObject(json.value.object,"test_Add",test,0);
+    if(state == 1){
+        printf("Error\n");
+    }
+    printfJsonValue(json);
+    printf("===================== AVEC SUPP =====================\n");
+    state = removeToObject(json.value.object,(int)getIndexFromObject(json.value.object,"test_Add"));
+    if(state == 1){
+        printf("Error\n");
+    }
+    printfJsonValue(json);
+    printf("===================== AVEC MODIF =====================\n");
+    JsonPair testModify;
+    JsonValue testModify_value;
+    _strcpy(&testModify.key,"test_1_string");
+    testModify_value.type = JSON_STRING;
+    _strcpy(&testModify_value.value.string,"TEST MODIFY");
+    testModify.value = testModify_value;
+    state = modifyObject(json.value.object,testModify,0);
     printfJsonValue(json);
 
-    FILE* w_file = fopen("./test.json","w");
-    fprintfJsonValue(w_file,json);
-
-    printf("\n");
     freeJsonValue(json);
-    printf("\n");
-
-    return 0;
 }
 
 JsonValue initCson(char* path){
@@ -183,7 +210,7 @@ void printfJsonValue(JsonValue value){
             printf("%f",value.value.decimal);
         break;
         case JSON_ERROR:
-            printf("ERROR");
+            printf("ERROR\n");
         break;
         case JSON_EXPONENTIAL:
             printf("%s",value.value.string);
@@ -535,8 +562,8 @@ void fprintfArray(FILE* file, int* depth, JsonArray ary){
 
 //////////////////////////////////////////// add function ////////////////////////////////////////////
 
-int addToObject(JsonObject* obj, char* key, JsonValue value){
-    if(obj == NULL || key == NULL){
+int addToObject(JsonObject* obj, char* key, JsonValue value,size_t index){
+    if(obj == NULL || key == NULL || obj->nbOfElement<index){
         return 1;
     }
 
@@ -546,18 +573,22 @@ int addToObject(JsonObject* obj, char* key, JsonValue value){
     }
     obj->listeOfPair = newListe;
 
-    obj->listeOfPair[obj->nbOfElement].key = NULL;
-    if(_strcpy(&obj->listeOfPair[obj->nbOfElement].key, key) != 0){
+    for(size_t i = obj->nbOfElement; i > index; i--){
+        newListe[i] = newListe[i-1];
+    }
+
+    newListe[index].key = NULL;
+    if((_strcpy(&newListe[index].key,key))){
         return 1;
     }
-    obj->listeOfPair[obj->nbOfElement].value = value;
+    newListe[index].value = value;
     obj->nbOfElement++;
 
     return 0;
 }
 
-int addToArray(JsonArray* ary, JsonValue value){
-    if(ary == NULL){
+int addToArray(JsonArray* ary, JsonValue value,size_t index){
+    if(ary == NULL || ary->nbOfElement < index){
         return 1;
     }
 
@@ -567,10 +598,104 @@ int addToArray(JsonArray* ary, JsonValue value){
     }
     ary->listeOfValue = newListe;
 
-    ary->listeOfValue[ary->nbOfElement] = value;
+    for(size_t i = ary->nbOfElement; i > index; i--){
+        newListe[i] = newListe[i-1];
+    }
+    newListe[index] = value;
     ary->nbOfElement++;
 
     return 0;
+}
+
+//////////////////////////////////////////// remove function ////////////////////////////////////////////
+
+int removeToObject(JsonObject* obj, size_t index){
+    if(obj == NULL || index >= obj->nbOfElement){
+        return 1;
+    }
+
+    free(obj->listeOfPair[index].key);
+    freeJsonValue(obj->listeOfPair[index].value);
+
+    for(size_t i = index; i < obj->nbOfElement - 1; i++){
+        obj->listeOfPair[i] = obj->listeOfPair[i + 1];
+    }
+
+    obj->nbOfElement--;
+    JsonPair* newListe = (JsonPair*)realloc(obj->listeOfPair, obj->nbOfElement * sizeof(JsonPair));
+    if(newListe == NULL && obj->nbOfElement > 0){
+        return 1;
+    }
+    obj->listeOfPair = newListe;
+
+    return 0;
+}
+
+int removeToArray(JsonArray* ary, size_t index){
+    if(ary == NULL || index >= ary->nbOfElement){
+        return 1;
+    }
+
+    freeJsonValue(ary->listeOfValue[index]);
+
+    for(size_t i = index; i < ary->nbOfElement - 1; i++){
+        ary->listeOfValue[i] = ary->listeOfValue[i + 1];
+    }
+
+    ary->nbOfElement--;
+    JsonValue* newListe = (JsonValue*)realloc(ary->listeOfValue, ary->nbOfElement * sizeof(JsonValue));
+    if(newListe == NULL && ary->nbOfElement > 0){
+        return 1;
+    }
+    ary->listeOfValue = newListe;
+
+    return 0;
+}
+
+//////////////////////////////////////////// modify function ////////////////////////////////////////////
+
+int modifyObject(JsonObject* obj,JsonPair paire,size_t index){
+    if(obj == NULL || index >= obj->nbOfElement){
+        return 1;
+    }
+
+    free(obj->listeOfPair[index].key);
+    freeJsonValue(obj->listeOfPair[index].value);
+    obj->listeOfPair[index] = paire;
+
+    return 0;
+}
+
+int modifyArray(JsonArray* ary,JsonValue value,size_t index){
+    if(ary == NULL || index >= ary->nbOfElement){
+        return 1;
+    }
+
+    freeJsonValue(ary->listeOfValue[index]);
+    ary->listeOfValue[index] = value;
+
+    return 0;
+}
+//////////////////////////////////////////// get function ////////////////////////////////////////////
+
+JsonValue* getValueFromObject(JsonObject* obj,char* key){
+    for(size_t i=0;i<obj->nbOfElement;i++){
+        if(_strcmp(obj->listeOfPair[i].key,key) == 0){
+            return &obj->listeOfPair[i].value;
+        }
+    }
+
+    return NULL;
+}
+
+int getIndexFromObject(JsonObject* obj,char* key){
+    for(size_t i=0;i<obj->nbOfElement;i++){
+        if(_strcmp(obj->listeOfPair[i].key,key) == 0){
+            return (int)i;
+        }
+    }
+
+    return -1;
 }
 
 //////////////////////////////////////////// parse function ////////////////////////////////////////////
