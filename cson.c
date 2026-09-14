@@ -88,18 +88,23 @@ JsonValue* getValueFromObject(JsonObject* obj,char* key);
 int getIndexFromObject(JsonObject* obj,char* key);
 
 // frees
-void freeJsonValue(JsonValue value);
+void freeValue(JsonValue value);
 void freeObject(JsonObject *obj);
-void freeArray(JsonArray *ary);                 
+void freeArray(JsonArray *ary);
+
+//cpy
+int cpyValue(JsonValue* dest,JsonValue* src);
+int cpyObject(JsonObject* dest,JsonObject* src);
+int cpyArray(JsonArray* dest,JsonArray* src);
 
 // printf
 void printfXtab(int x);
-void printfJsonValue(JsonValue value);
+void printfValue(JsonValue value);
 void printfArray(int* depth, JsonArray ary);
 void printfObject(int* depth, JsonObject obj);
 
 // fprintf
-int fprintfJsonValue(FILE* file,JsonValue value);
+int fprintfValue(FILE* file,JsonValue value);
 void fprintfObject(FILE* file, int* depth, JsonObject obj);
 void fprintfArray(FILE* file, int* depth, JsonArray ary);
 
@@ -118,38 +123,95 @@ int stringToDouble(char* str, double* res);
 void debug(char* str);
 
 int main(int argc, char *argv[]) {
-    JsonValue json;
-    json = initCson(argv[1]);
-    int state;
-
-    printf("===================== SANS MODIF =====================\n");
-    printfJsonValue(json);
-    printf("===================== AVEC ADD =====================\n");
-    JsonValue test;
-    test.type = JSON_NUMBER;
-    test.value.integer = 100;
-    state = addToObject(json.value.object,"test_Add",test,0);
+    // Créer un objet source ALLOUÉ
+    JsonObject* srcObj = (JsonObject*)malloc(sizeof(JsonObject));
+    srcObj->nbOfElement = 0;
+    srcObj->listeOfPair = (JsonPair*)calloc(10, sizeof(JsonPair));
+    
+    JsonValue val1;
+    val1.type = JSON_STRING;
+    val1.value.string = NULL;
+    _strcpy(&val1.value.string, "Hello World");
+    int state = addToObject(srcObj, "greeting", val1, 0);
+    if(state != 0) printf("Erreur ajout val1\n");
+    
+    JsonValue val2;
+    val2.type = JSON_NUMBER;
+    val2.value.integer = 42;
+    state = addToObject(srcObj, "answer", val2, 1);
+    if(state != 0) printf("Erreur ajout val2\n");
+    
+    JsonValue val3;
+    val3.type = JSON_BOOL;
+    val3.value.integer = 1;
+    state = addToObject(srcObj, "active", val3, 2);
+    if(state != 0) printf("Erreur ajout val3\n");
+    
+    printf("===================== OBJET SOURCE =====================\n");
+    int depth = 0;
+    printfObject(&depth, *srcObj);
+    
+    // Créer un objet destination ALLOUÉ
+    printf("===================== COPIE OBJET =====================\n");
+    JsonObject* destObj = (JsonObject*)malloc(sizeof(JsonObject));
+    destObj->nbOfElement = 0;
+    destObj->listeOfPair = (JsonPair*)calloc(10, sizeof(JsonPair));
+    
+    state = cpyObject(destObj, srcObj);
     if(state == 1){
-        printf("Error\n");
+        printf("Erreur lors de la copie objet\n");
     }
-    printfJsonValue(json);
-    printf("===================== AVEC SUPP =====================\n");
-    state = removeToObject(json.value.object,(int)getIndexFromObject(json.value.object,"test_Add"));
+    
+    depth = 0;
+    printfObject(&depth, *destObj);
+    
+    // Tester avec un array
+    printf("\n===================== ARRAY SOURCE =====================\n");
+    JsonArray* srcAry = (JsonArray*)malloc(sizeof(JsonArray));
+    srcAry->nbOfElement = 0;
+    srcAry->listeOfValue = (JsonValue*)calloc(10, sizeof(JsonValue));
+    
+    JsonValue aryVal1;
+    aryVal1.type = JSON_NUMBER;
+    aryVal1.value.integer = 10;
+    state = addToArray(srcAry, aryVal1, 0);
+    if(state != 0) printf("Erreur ajout aryVal1\n");
+    
+    JsonValue aryVal2;
+    aryVal2.type = JSON_STRING;
+    aryVal2.value.string = NULL;
+    _strcpy(&aryVal2.value.string, "test");
+    state = addToArray(srcAry, aryVal2, 1);
+    if(state != 0) printf("Erreur ajout aryVal2\n");
+    
+    depth = 0;
+    printfArray(&depth, *srcAry);
+    printf("\n");
+    
+    // Copier l'array
+    printf("===================== COPIE ARRAY =====================\n");
+    JsonArray* destAry = (JsonArray*)malloc(sizeof(JsonArray));
+    destAry->nbOfElement = 0;
+    destAry->listeOfValue = NULL;
+    
+    state = cpyArray(destAry, srcAry);
     if(state == 1){
-        printf("Error\n");
+        printf("Erreur lors de la copie array\n");
     }
-    printfJsonValue(json);
-    printf("===================== AVEC MODIF =====================\n");
-    JsonPair testModify;
-    JsonValue testModify_value;
-    _strcpy(&testModify.key,"test_1_string");
-    testModify_value.type = JSON_STRING;
-    _strcpy(&testModify_value.value.string,"TEST MODIFY");
-    testModify.value = testModify_value;
-    state = modifyObject(json.value.object,testModify,0);
-    printfJsonValue(json);
-
-    freeJsonValue(json);
+    
+    depth = 0;
+    printfArray(&depth, *destAry);
+    printf("\n");
+    
+    // Libérer
+    printf("===================== LIBERATION =====================\n");
+    freeObject(srcObj);
+    freeObject(destObj);
+    freeArray(srcAry);
+    freeArray(destAry);
+    printf("Tout libéré !\n");
+    
+    return 0;
 }
 
 JsonValue initCson(char* path){
@@ -189,7 +251,7 @@ void printfXtab(int x){
     }
 }
 
-void printfJsonValue(JsonValue value){
+void printfValue(JsonValue value){
     int depth = 0;
     switch(value.type){
         case JSON_ARRAY:
@@ -375,7 +437,7 @@ void fprintfXtab(FILE* file, int x){
     }
 }
 
-int fprintfJsonValue(FILE* file, JsonValue value){
+int fprintfValue(FILE* file, JsonValue value){
     int depth = 0;
     switch(value.type){
         case JSON_ARRAY:
@@ -567,6 +629,10 @@ int addToObject(JsonObject* obj, char* key, JsonValue value,size_t index){
         return 1;
     }
 
+    if(getIndexFromObject(obj,key) != -1){
+        return 1;
+    }
+
     JsonPair* newListe = (JsonPair*)realloc(obj->listeOfPair, (obj->nbOfElement + 1) * sizeof(JsonPair));
     if(newListe == NULL){
         return 1;
@@ -615,7 +681,7 @@ int removeToObject(JsonObject* obj, size_t index){
     }
 
     free(obj->listeOfPair[index].key);
-    freeJsonValue(obj->listeOfPair[index].value);
+    freeValue(obj->listeOfPair[index].value);
 
     for(size_t i = index; i < obj->nbOfElement - 1; i++){
         obj->listeOfPair[i] = obj->listeOfPair[i + 1];
@@ -636,7 +702,7 @@ int removeToArray(JsonArray* ary, size_t index){
         return 1;
     }
 
-    freeJsonValue(ary->listeOfValue[index]);
+    freeValue(ary->listeOfValue[index]);
 
     for(size_t i = index; i < ary->nbOfElement - 1; i++){
         ary->listeOfValue[i] = ary->listeOfValue[i + 1];
@@ -660,7 +726,7 @@ int modifyObject(JsonObject* obj,JsonPair paire,size_t index){
     }
 
     free(obj->listeOfPair[index].key);
-    freeJsonValue(obj->listeOfPair[index].value);
+    freeValue(obj->listeOfPair[index].value);
     obj->listeOfPair[index] = paire;
 
     return 0;
@@ -671,7 +737,7 @@ int modifyArray(JsonArray* ary,JsonValue value,size_t index){
         return 1;
     }
 
-    freeJsonValue(ary->listeOfValue[index]);
+    freeValue(ary->listeOfValue[index]);
     ary->listeOfValue[index] = value;
 
     return 0;
@@ -1182,7 +1248,7 @@ JsonValue parseValue(char* json_str, size_t* position) {
     }
 }
 //////////////////////////////////////////// free function ////////////////////////////////////////////
-void freeJsonValue(JsonValue value){
+void freeValue(JsonValue value){
     switch(value.type){
         case JSON_BOOL:
         case JSON_DECIMAL:
@@ -1270,6 +1336,132 @@ void freeArray(JsonArray *ary){
     free(ary->listeOfValue);
     free(ary);
     debug("free ary\n");
+}
+
+//////////////////////////////////////////// cpy function ////////////////////////////////////////////
+
+int cpyValue(JsonValue* dest,JsonValue* src){
+    if(dest == NULL ||src == NULL){
+        printf("Erreur : copy of a array impossible -> dest or src is null");
+        return 1;
+    }
+    int state;
+
+    dest->type = src->type;
+    switch(dest->type){
+        case JSON_NULL :
+            dest->value.integer = 0;
+        break;
+        case JSON_BOOL :
+            if(src->value.integer == 1){
+                dest->value.integer = 1;
+            }else if(src->value.integer == 0){
+                dest->value.integer = 0;
+            }else{
+                dest->type = JSON_ERROR;
+            }
+        break;
+        case JSON_NUMBER:
+            dest->value.integer = src->value.integer;
+        break;
+        case JSON_STRING :
+            dest->value.string = NULL;
+            state = _strcpy(&dest->value.string,src->value.string);
+            if(state){
+                printf("Error : copy of value (String) had a problem...\n");
+                return 1;
+            }
+        break;
+        case JSON_ARRAY :
+            state = cpyArray(dest->value.array,src->value.array);
+            if(state){
+                printf("Error : copy of value (Array) had a problem...\n");
+                return 1;
+            }
+        break;
+        case JSON_OBJECT :
+            state = cpyObject(dest->value.object,src->value.object);
+            if(state){
+                printf("Error : copy of value (Object) had a problem...\n");
+                return 1;
+            }
+        break;
+        case JSON_DECIMAL :
+            dest->value.decimal = src->value.decimal;
+        break;
+        case JSON_EXPONENTIAL :
+            state = _strcpy(&dest->value.string,src->value.string);
+            if(state){
+                printf("Error : copy of value (Exponential) had a problem...\n");
+                return 1;
+            }
+        break;
+        case JSON_ERROR :
+            dest->value.integer = 0;
+        break;
+        default :
+            printf("Error : unknow type...\n");
+    }
+    return 0;
+}
+
+int cpyObject(JsonObject* dest,JsonObject* src){
+    if(dest == NULL ||src == NULL){
+        printf("Erreur : copy of a array impossible -> dest or src is null");
+        return 1;
+    }
+    int state;
+
+    if(dest->listeOfPair == NULL){
+        dest->listeOfPair = (JsonPair*)calloc(src->nbOfElement, sizeof(JsonPair));
+        if(dest->listeOfPair == NULL){
+            printf("Erreur : something went wrong during the allocation for an object");
+            return 1;
+        }
+    }
+
+    dest->nbOfElement = src->nbOfElement;
+    for(int i=0;i<dest->nbOfElement;i++){
+        state = _strcpy(&dest->listeOfPair[i].key,src->listeOfPair[i].key);
+        if(state){
+            printf("Error : copy of key from the object %s had a problem...\n",src->listeOfPair[i].key);
+            return 1;
+        }
+
+        state = cpyValue(&dest->listeOfPair[i].value,&src->listeOfPair[i].value);
+        if(state){
+            printf("Error : copy of the value from the object %s had a problem...\n",src->listeOfPair[i].key);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int cpyArray(JsonArray* dest,JsonArray* src){
+    if(dest == NULL ||src == NULL){
+        printf("Erreur : copy of a array impossible -> dest or src is null");
+        return 1;
+    }
+    int state;
+
+    if(dest->listeOfValue == NULL){
+        dest->listeOfValue = (JsonValue*)calloc(src->nbOfElement,sizeof(JsonValue));
+        if(dest->listeOfValue == NULL){
+            printf("Erreur : something went wrong during the allocation for a array");
+            return 1;
+        }
+    }
+
+    dest->nbOfElement = src->nbOfElement;
+    for(int i=0; i < src->nbOfElement; i++){
+        state = cpyValue(&dest->listeOfValue[i],&src->listeOfValue[i]);
+        if(state){
+            printf("Erreur : copy of an array had a error...");
+            return 1;
+        }
+    }
+
+    return 0;
 }
 
 //////////////////////////////////////////// treatment function ////////////////////////////////////////////
