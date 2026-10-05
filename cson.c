@@ -28,7 +28,7 @@ typedef struct JsonObject JsonObject;
 // Représentation d'une valeur JSON qui peut étre l'une de ces valeur -> Paire valeur type
 typedef struct JsonValue{
     union {
-        int integer; // ou Binaire
+        long long int integer; // ou Binaire
         double decimal; // JSON ne fais pas la diff entre integer et decimal mais la je suis C
         char* string;
         JsonArray* array;   // On file des pointeur pour des soucis de place,
@@ -131,7 +131,7 @@ int _strchrxt(char * str,char x,int avoid);
 int _strcpy(char** dest,char* src);
 
 // conversion to str to x
-int stringToInt(char* str,int* res);
+int stringToInt(char* str,long long int* res);
 int stringToDouble(char* str, double* res);
 
 void debug(char* str);
@@ -230,7 +230,7 @@ void printfValue(JsonValue value){
             printf("null");
         break;
         case JSON_NUMBER:
-            printf("%d",value.value.integer);
+            printf("%lld",value.value.integer);
         break;
         case JSON_OBJECT:
             printfObject(&depth,*value.value.object);
@@ -288,7 +288,7 @@ void printfArray(int* depth,JsonArray ary){
                 printf("null");
             break;
             case JSON_NUMBER:
-                printf("%d",ary.listeOfValue[i].value.integer);
+                printf("%lld",ary.listeOfValue[i].value.integer);
             break;
             case JSON_STRING:{
                 if(ary.listeOfValue[i].value.string == NULL){
@@ -357,7 +357,7 @@ void printfObject(int* depth,JsonObject obj){
                 printf("null");
             break;
             case JSON_NUMBER:
-                printf("%d",obj.listeOfPair[i].value.value.integer);
+                printf("%lld",obj.listeOfPair[i].value.value.integer);
             break;
             case JSON_STRING:{
                 if(obj.listeOfPair[i].value.value.string == NULL){
@@ -420,7 +420,7 @@ int fprintfValue(FILE* file, JsonValue value){
             fprintf(file,"null");
         break;
         case JSON_NUMBER:
-            fprintf(file,"%d",value.value.integer);
+            fprintf(file,"%lld",value.value.integer);
         break;
         case JSON_OBJECT:
             fprintfObject(file,&depth,*value.value.object);
@@ -488,7 +488,7 @@ void fprintfObject(FILE* file, int* depth, JsonObject obj){
                 fprintf(file,"null");
             break;
             case JSON_NUMBER:
-                fprintf(file,"%d",obj.listeOfPair[i].value.value.integer);
+                fprintf(file,"%lld",obj.listeOfPair[i].value.value.integer);
             break;
             case JSON_STRING:{
                 if(obj.listeOfPair[i].value.value.string == NULL){
@@ -555,7 +555,7 @@ void fprintfArray(FILE* file, int* depth, JsonArray ary){
                 fprintf(file,"null");
             break;
             case JSON_NUMBER:
-                fprintf(file,"%d",ary.listeOfValue[i].value.integer);
+                fprintf(file,"%lld",ary.listeOfValue[i].value.integer);
             break;
             case JSON_STRING:{
                 if(ary.listeOfValue[i].value.string == NULL){
@@ -652,7 +652,7 @@ int newJsonBool(JsonValue* dest,int _bool){
     return 0;
 }
 
-int newJsonNumber(JsonValue* dest,int _int){
+int newJsonNumber(JsonValue* dest,long long int _int){
     if(dest == NULL){
         return 1;
     }
@@ -1108,6 +1108,7 @@ JsonValue parseOBJ(char* json_str, size_t* position){
     obj_value.value.object->nbOfElement = 0;
     obj_value.value.object->listeOfPair = (JsonPair*)calloc(10, sizeof(JsonPair));
     if(obj_value.value.object->listeOfPair == NULL){
+        free(obj_value.value.object);
         obj_value = initJsonValue(JSON_ERROR);
         return obj_value;
     }
@@ -1129,15 +1130,13 @@ JsonValue parseOBJ(char* json_str, size_t* position){
 
         if(capacity <= NumberOfElement){
             capacity *= 2;
-            obj_value.value.object->listeOfPair = (JsonPair*)realloc(
-                obj_value.value.object->listeOfPair, 
-                capacity * sizeof(JsonPair)
-            );
-            if(obj_value.value.object->listeOfPair == NULL){
+            JsonPair* tmp = (JsonPair*)realloc(obj_value.value.object->listeOfPair, capacity * sizeof(JsonPair));
+            if(tmp == NULL){
                 freeObject(obj_value.value.object);
                 obj_value = initJsonValue(JSON_ERROR);
                 return obj_value;
             }
+            obj_value.value.object->listeOfPair = tmp;
         }
 
         size_t before = index;
@@ -1249,6 +1248,7 @@ JsonValue parseARRAY(char* json_str, size_t* position){
     ary_value.value.array->nbOfElement = 0;
     ary_value.value.array->listeOfValue = (JsonValue*)calloc(capacity, sizeof(JsonValue));
     if(ary_value.value.array->listeOfValue == NULL){
+        free(ary_value.value.array);
         ary_value = initJsonValue(JSON_ERROR);
         return ary_value;
     }
@@ -1269,15 +1269,14 @@ JsonValue parseARRAY(char* json_str, size_t* position){
 
         if(capacity <= NumberOfElement){
             capacity *= 2;
-            ary_value.value.array->listeOfValue = (JsonValue*)realloc(
-                ary_value.value.array->listeOfValue, 
-                capacity * sizeof(JsonValue)
-            );
-            if(ary_value.value.array->listeOfValue == NULL){
+
+            JsonPair* tmp = (JsonValue*)realloc(ary_value.value.array->listeOfValue, capacity * sizeof(JsonValue));
+            if(tmp == NULL){
                 freeArray(ary_value.value.array);
                 ary_value = initJsonValue(JSON_ERROR);
                 return ary_value;
             }
+            ary_value.value.array->listeOfValue = tmp;
         }
 
         size_t before = index;
@@ -1479,7 +1478,7 @@ JsonValue parseNUMBER(char* json_str,size_t* position){
         nbr_value = initJsonValue(JSON_ERROR);
         return nbr_value;
     }
-    int number_int;
+    long long int number_int;
     size_t numberOfDigit = 0;
     int state;
 
@@ -1502,11 +1501,19 @@ JsonValue parseNUMBER(char* json_str,size_t* position){
     number_str[numberOfDigit] = '\0';
     state = stringToInt(number_str,&number_int);
     if(state == 1){
-        nbr_value = initJsonValue(JSON_ERROR);
-        free(number_str);
-        return nbr_value;
+        // Trop long pour un long long -> on le garde en double (valeur approchée)
+        double number_double;
+        if(stringToDouble(number_str, &number_double)){
+            nbr_value = initJsonValue(JSON_ERROR);
+            free(number_str);
+            return nbr_value;
+        }
+        nbr_value.type = JSON_DECIMAL;
+        nbr_value.value.decimal = number_double;
+    }else{
+        nbr_value.value.integer = number_int;
     }
-    nbr_value.value.integer = number_int;
+
     *position = *position + numberOfDigit;  
     free(number_str);
     return nbr_value;
@@ -1564,7 +1571,6 @@ JsonValue parseNULL(char* json_str,size_t* position){
     }
     int state;
 
-    // Sans délimiteur (ex: "null" seul à la racine), la valeur va jusqu'à la fin
     size_t indexEnd = g_SIZE;
     for(size_t i=*position;i<g_SIZE;i++){
         if(json_str[i] == ',' || json_str[i] == '}' || json_str[i] == ']'){
@@ -1811,6 +1817,7 @@ int cpyValue(JsonValue* dest,JsonValue* src){
             if(state){
                 printf("Error : copy of value (Array) had a problem...\n");
                 free(dest->value.array);
+                *dest = initJsonValue(JSON_ERROR);
                 return 1;
             }
         break;
@@ -1827,6 +1834,7 @@ int cpyValue(JsonValue* dest,JsonValue* src){
             if(state){
                 printf("Error : copy of value (Object) had a problem...\n");
                 free(dest->value.object);
+                *dest = initJsonValue(JSON_ERROR);
                 return 1;
             }
         break;
@@ -2244,17 +2252,15 @@ int _strcpy(char** dest,char* src){
     return 0;
 }
 
-int stringToInt(char* str,int* res){
+int stringToInt(char* str,long long int* res){
     if(str == NULL){
         return 1;
     }
-    int result = 0;
+    long long int result = 0;
     int boolNeg = 0;
     int i = 0;
     int len = (int)_strlen(str);
-    if(len >= 63){
-        return 1;
-    }else if(len == 0) {
+    if(len == 0) {
         return 1;
     }
 
@@ -2264,6 +2270,9 @@ int stringToInt(char* str,int* res){
     if(str[0] == '-') {
         boolNeg = 1;
         i++;
+    }
+    if(len - i >= 19){
+        return 1;
     }
 
     for(; i < len; i++){
