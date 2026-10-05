@@ -705,8 +705,20 @@ int addToObject(JsonObject* obj, char* key, JsonValue value,size_t index){
         return 1;
     }
 
+    char* cpy_key = NULL;
+    if(_strcpy(&cpy_key, key)){
+        return 1;
+    }
+    JsonValue cpy_value ;
+    if(cpyValue(&cpy_value, &value)){
+        free(cpy_key);
+        return 1;
+    }
+
     JsonPair* newListe = (JsonPair*)realloc(obj->listeOfPair, (obj->nbOfElement + 1) * sizeof(JsonPair));
     if(newListe == NULL){
+        free(cpy_key);
+        freeValue(cpy_value);
         return 1;
     }
     obj->listeOfPair = newListe;
@@ -715,23 +727,26 @@ int addToObject(JsonObject* obj, char* key, JsonValue value,size_t index){
         newListe[i] = newListe[i-1];
     }
 
-    newListe[index].key = NULL;
-    if((_strcpy(&newListe[index].key,key))){
-        return 1;
-    }
-    newListe[index].value = value;
+    newListe[index].key = cpy_key;
+    newListe[index].value = cpy_value;
     obj->nbOfElement++;
 
     return 0;
 }
 
-int addToArray(JsonArray* ary, JsonValue value,size_t index){
+int addToArray(JsonArray* ary, JsonValue value, size_t index){
     if(ary == NULL || ary->nbOfElement < index){
+        return 1;
+    }
+
+    JsonValue cpy_value;
+    if(cpyValue(&cpy_value, &value)){
         return 1;
     }
 
     JsonValue* newListe = (JsonValue*)realloc(ary->listeOfValue, (ary->nbOfElement + 1) * sizeof(JsonValue));
     if(newListe == NULL){
+        freeValue(cpy_value);
         return 1;
     }
     ary->listeOfValue = newListe;
@@ -739,7 +754,7 @@ int addToArray(JsonArray* ary, JsonValue value,size_t index){
     for(size_t i = ary->nbOfElement; i > index; i--){
         newListe[i] = newListe[i-1];
     }
-    newListe[index] = value;
+    newListe[index] = cpy_value;
     ary->nbOfElement++;
 
     return 0;
@@ -808,21 +823,40 @@ int modifyObject(JsonObject* obj,JsonPair paire,size_t index){
     if(obj == NULL || index >= obj->nbOfElement){
         return 1;
     }
+    size_t paireLen = _strlen(paire.key);
+    if(paireLen == (size_t)-1){
+        return 1;
+    }
+
+    JsonPair newPair;
+    newPair.key = NULL
+    if(_strcpy(&newPair.key,paire.key)){
+        return 1;
+    }
+    if(cpyValue(&newPair.value,&paire.value)){
+        free(newPair.key);
+        return 1;
+    }
 
     free(obj->listeOfPair[index].key);
     freeValue(obj->listeOfPair[index].value);
-    obj->listeOfPair[index] = paire;
+    obj->listeOfPair[index] = newPair;
 
     return 0;
 }
 
-int modifyArray(JsonArray* ary,JsonValue value,size_t index){
-    if(ary == NULL || index >= ary->nbOfElement){
+int modifyArray(JsonArray* ary, JsonValue value, size_t index){
+    if(ary == NULL || index >= (size_t)ary->nbOfElement){
+        return 1;
+    }
+
+    JsonValue newValue;
+    if(cpyValue(&newValue, &value)){
         return 1;
     }
 
     freeValue(ary->listeOfValue[index]);
-    ary->listeOfValue[index] = value;
+    ary->listeOfValue[index] = newValue;
 
     return 0;
 }
@@ -1132,6 +1166,7 @@ JsonValue parseOBJ(char* json_str, size_t* position){
             capacity *= 2;
             JsonPair* tmp = (JsonPair*)realloc(obj_value.value.object->listeOfPair, capacity * sizeof(JsonPair));
             if(tmp == NULL){
+                obj_value.value.object->nbOfElement = NumberOfElement;
                 freeObject(obj_value.value.object);
                 obj_value = initJsonValue(JSON_ERROR);
                 return obj_value;
@@ -1269,9 +1304,9 @@ JsonValue parseARRAY(char* json_str, size_t* position){
 
         if(capacity <= NumberOfElement){
             capacity *= 2;
-
-            JsonPair* tmp = (JsonValue*)realloc(ary_value.value.array->listeOfValue, capacity * sizeof(JsonValue));
+            JsonValue* tmp = (JsonValue*)realloc(ary_value.value.array->listeOfValue, capacity * sizeof(JsonValue));
             if(tmp == NULL){
+                ary_value.value.array->nbOfElement = NumberOfElement;
                 freeArray(ary_value.value.array);
                 ary_value = initJsonValue(JSON_ERROR);
                 return ary_value;
