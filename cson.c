@@ -139,7 +139,7 @@ void debug(char* str);
 JsonValue initCson(char* path){
     JsonValue json = initJsonValue(JSON_ERROR);
 
-    FILE* file = fopen(path, "r");
+    FILE* file = fopen(path, "rb");
     if(file == NULL){
         printf("Error : impossible to open JSON file\n");
         return json;
@@ -574,6 +574,125 @@ void fprintfArray(FILE* file, int* depth, JsonArray ary){
     }
     fprintf(file,"]");
 }
+
+//////////////////////////////////////////// new function ////////////////////////////////////////////
+
+int newJsonObject(JsonValue* dest){
+    if(dest == NULL){
+        return 1;
+    }
+    *dest = initJsonValue(JSON_OBJECT);
+    dest->value.object =(JsonObject*)malloc(sizeof(JsonObject));
+    if(dest->value.object == NULL){
+        dest->type = JSON_ERROR;
+        return 1;
+    }
+    dest->value.object->nbOfElement = 0;
+    dest->value.object->listeOfPair = NULL;
+
+    return 0;
+}
+
+int newJsonArray(JsonValue* dest){
+    if(dest == NULL){
+        return 1;
+    }
+    *dest = initJsonValue(JSON_ARRAY);
+    dest->value.array = (JsonArray*)malloc(sizeof(JsonArray));
+    if(dest->value.array == NULL){
+        dest->type = JSON_ERROR;
+        return 1;
+    }
+    dest->value.array->nbOfElement = 0;
+    dest->value.array->listeOfValue = NULL;
+
+    return 0;
+}
+
+int newJsonString(JsonValue* dest,char* str){
+    if(dest == NULL){
+        return 1;
+    }
+    
+    *dest = initJsonValue(JSON_STRING);
+    dest->value.string = NULL;
+    int state;
+    
+    state = _strcpy(&dest->value.string,str);
+    if(state){
+        dest->type = JSON_ERROR;
+        return 1;
+    }
+    
+    return 0;
+}
+
+int newJsonNull(JsonValue* dest){
+    if(dest == NULL){
+        return 1;
+    }
+    
+    *dest = initJsonValue(JSON_NULL);
+    dest->value.integer = 0;
+    
+    return 0;
+}
+
+int newJsonBool(JsonValue* dest,int _bool){
+    if(dest == NULL){
+        return 1;
+    }
+    if(_bool > 1 || _bool < 0){
+        return 1;
+    }
+    
+    *dest = initJsonValue(JSON_BOOL);
+    dest->value.integer = _bool;
+    
+    return 0;
+}
+
+int newJsonNumber(JsonValue* dest,int _int){
+    if(dest == NULL){
+        return 1;
+    }
+    
+    *dest = initJsonValue(JSON_NUMBER);
+    dest->value.integer = _int;
+    
+    return 0;
+}
+
+int newJsonDecimal(JsonValue* dest,double _dec){
+    if(dest == NULL){
+        return 1;
+    }
+    
+    *dest = initJsonValue(JSON_DECIMAL);
+    dest->value.decimal = _dec;
+    
+    return 0;
+}
+
+int newJsonExponencial(JsonValue* dest,char* exp){
+    if(dest == NULL){
+        return 1;
+    }
+    
+    *dest = initJsonValue(JSON_EXPONENTIAL);
+    dest->value.string = NULL;
+    int state;
+    
+    state = _strcpy(&dest->value.string,exp);
+    if(state){
+        dest->type = JSON_ERROR;
+        return 1;
+    }
+    
+    return 0;
+}
+
+
 
 //////////////////////////////////////////// add function ////////////////////////////////////////////
 
@@ -1737,6 +1856,9 @@ int cpyObject(JsonObject* dest,JsonObject* src){
         printf("Erreur : copy of a array impossible -> dest or src is null");
         return 1;
     }
+    if(dest == src){
+        return 0;
+    }
     int state;
 
     if(dest->listeOfPair == NULL){
@@ -1755,6 +1877,9 @@ int cpyObject(JsonObject* dest,JsonObject* src){
             dest->listeOfPair = NULL;
         }
         dest->listeOfPair = (JsonPair*)calloc(src->nbOfElement, sizeof(JsonPair));
+        if(dest->listeOfPair == NULL){
+            return 1;
+        }
     }
 
     dest->nbOfElement = src->nbOfElement;
@@ -1765,17 +1890,26 @@ int cpyObject(JsonObject* dest,JsonObject* src){
             for(int j = 0; j < i; j++){
                 free(dest->listeOfPair[j].key);
                 freeValue(dest->listeOfPair[j].value);
+                
             }
+            free(dest->listeOfPair);
+            dest->listeOfPair = NULL;
+            dest->nbOfElement = 0;
             return 1;
         }
 
         state = cpyValue(&dest->listeOfPair[i].value,&src->listeOfPair[i].value);
         if(state){
             printf("Error : copy of the value from the object %s had a problem...\n",src->listeOfPair[i].key);
+            free(dest->listeOfPair[i].key);
             for(int j = 0; j < i; j++){
                 free(dest->listeOfPair[j].key);
                 freeValue(dest->listeOfPair[j].value);
+                dest->nbOfElement = 0;
             }
+            free(dest->listeOfPair);
+            dest->listeOfPair = NULL;
+            dest->nbOfElement = 0;
             return 1;
         }
     }
@@ -2118,7 +2252,9 @@ int stringToInt(char* str,int* res){
     int boolNeg = 0;
     int i = 0;
     int len = (int)_strlen(str);
-    if (len == 0) {
+    if(len >= 63){
+        return 1;
+    }else if(len == 0) {
         return 1;
     }
 
