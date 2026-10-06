@@ -117,6 +117,7 @@ void printfObject(int* depth, JsonObject obj);
 
 // fprintf
 int fprintfValue(FILE* file,JsonValue value);
+void fprintfDouble(FILE* file, double d);
 void fprintfObject(FILE* file, int* depth, JsonObject obj);
 void fprintfArray(FILE* file, int* depth, JsonArray ary);
 
@@ -216,7 +217,7 @@ void printfValue(JsonValue value){
         }
         
         case JSON_DECIMAL:
-            printf("%f",value.value.decimal);
+            fprintfDouble(stdout,value.value.decimal);
         break;
         case JSON_ERROR:
             printf("ERROR\n");
@@ -269,7 +270,7 @@ void printfArray(int* depth,JsonArray ary){
             }
             break;
             case JSON_DECIMAL:
-                printf("%f",ary.listeOfValue[i].value.decimal);
+                fprintfDouble(stdout,ary.listeOfValue[i].value.decimal);
             break;
             case JSON_ERROR:
                 printf("ERROR");
@@ -338,7 +339,7 @@ void printfObject(int* depth,JsonObject obj){
             }
             break;
             case JSON_DECIMAL:
-                printf("%f",obj.listeOfPair[i].value.value.decimal);
+                fprintfDouble(stdout,obj.listeOfPair[i].value.value.decimal);
             break;
             case JSON_ERROR:
                 printf("ERROR");
@@ -388,6 +389,25 @@ void fprintfXtab(FILE* file, int x){
     }
 }
 
+// Écrit un double avec juste assez de chiffres après la virgule pour le relire à l'identique.
+// Toujours avec un '.', jamais d'exposant : la relecture redonne bien un JSON_DECIMAL.
+void fprintfDouble(FILE* file, double d){
+    char buffer[63];   // parseDECIMAL refuse les nombres de 63 caractères ou plus
+    double check;
+    for(int precision = 1; precision <= 60; precision++){
+        int len = snprintf(buffer, sizeof(buffer), "%.*f", precision, d);
+        if(len >= (int)sizeof(buffer)){
+            break;   // trop long : ajouter des chiffres ne fera que l'allonger
+        }
+        if(stringToDouble(buffer, &check) == 0 && check == d){
+            fprintf(file, "%s", buffer);
+            return;
+        }
+    }
+    // Cas extrêmes (1e-300, 1e70...) : impossible sans exposant en 62 caractères
+    fprintf(file, "%.17g", d);
+}
+
 int fprintfValue(FILE* file, JsonValue value){
     int depth = 0;
     switch(value.type){
@@ -406,7 +426,7 @@ int fprintfValue(FILE* file, JsonValue value){
         }
         
         case JSON_DECIMAL:
-            fprintf(file,"%f",value.value.decimal);
+            fprintfDouble(file,value.value.decimal);
         break;
         case JSON_ERROR:
             fprintf(file,"ERROR");
@@ -469,7 +489,7 @@ void fprintfObject(FILE* file, int* depth, JsonObject obj){
             }
             break;
             case JSON_DECIMAL:
-                fprintf(file,"%f",obj.listeOfPair[i].value.value.decimal);
+                fprintfDouble(file,obj.listeOfPair[i].value.value.decimal);
             break;
             case JSON_ERROR:
                 fprintf(file,"ERROR");
@@ -536,7 +556,7 @@ void fprintfArray(FILE* file, int* depth, JsonArray ary){
             }
             break;
             case JSON_DECIMAL:
-                fprintf(file,"%f",ary.listeOfValue[i].value.decimal);
+                fprintfDouble(file,ary.listeOfValue[i].value.decimal);
             break;
             case JSON_ERROR:
                 fprintf(file,"ERROR");
@@ -827,7 +847,7 @@ int modifyObject(JsonObject* obj,JsonPair paire,size_t index){
     }
 
     JsonPair newPair;
-    newPair.key = NULL
+    newPair.key = NULL;
     if(_strcpy(&newPair.key,paire.key)){
         return 1;
     }
@@ -1095,7 +1115,6 @@ int validateNumber(char* json_str, size_t size, size_t* pos){
         }
     }
 
-    // Ce qui suit (',' '}' ']' ou fin) est vérifié par l'appelant : "1e5e3" ou "1.2.3" sont refusés
     return 0;
 }
 
