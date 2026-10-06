@@ -392,7 +392,7 @@ void fprintfXtab(FILE* file, int x){
 // Écrit un double avec juste assez de chiffres après la virgule pour le relire à l'identique.
 // Toujours avec un '.', jamais d'exposant : la relecture redonne bien un JSON_DECIMAL.
 void fprintfDouble(FILE* file, double d){
-    char buffer[63];   // parseDECIMAL refuse les nombres de 63 caractères ou plus
+    char buffer[BUFFER_DEFAULT_SIZE];   // au plus BUFFER_DEFAULT_SIZE - 1 caractères + '\0', comme à la lecture
     double check;
     for(int precision = 1; precision <= 60; precision++){
         int len = snprintf(buffer, sizeof(buffer), "%.*f", precision, d);
@@ -404,7 +404,7 @@ void fprintfDouble(FILE* file, double d){
             return;
         }
     }
-    // Cas extrêmes (1e-300, 1e70...) : impossible sans exposant en 62 caractères
+    // Cas extrêmes (1e-300, 1e70...) : impossible sans exposant en BUFFER_DEFAULT_SIZE - 1 caractères
     fprintf(file, "%.17g", d);
 }
 
@@ -1073,7 +1073,7 @@ int validateString(char* json_str, size_t size, size_t* pos){
 }
 
 int validateNumber(char* json_str, size_t size, size_t* pos){
-    // [-] partieEntière [.chiffres] [e|E [+|-] chiffres]
+    size_t start = *pos;
     if(*pos < size && json_str[*pos] == '-'){
         (*pos)++;
     }
@@ -1113,6 +1113,12 @@ int validateNumber(char* json_str, size_t size, size_t* pos){
         while(isDigitAt(json_str, size, *pos)){
             (*pos)++;
         }
+    }
+
+    // Trop long pour les buffers de parseNUMBER / parseDECIMAL / parseEXPONENTIAL
+    if(*pos - start > BUFFER_DEFAULT_SIZE - 1){
+        *pos = start;   // l'erreur pointera sur le début du nombre
+        return 1;
     }
 
     return 0;
@@ -1441,7 +1447,7 @@ JsonValue parseEXPONENTIAL(char* json_str,size_t* position){
     JsonValue exp_value = initJsonValue(JSON_ERROR);
 
     exp_value.type = JSON_EXPONENTIAL;
-    exp_value.value.string = (char*)calloc(64,sizeof(char));
+    exp_value.value.string = (char*)calloc(BUFFER_DEFAULT_SIZE,sizeof(char));
     if(exp_value.value.string == NULL){
         exp_value = initJsonValue(JSON_ERROR);
         return exp_value;
@@ -1450,7 +1456,10 @@ JsonValue parseEXPONENTIAL(char* json_str,size_t* position){
     int numberOfDot = 0;
 
     for(size_t i = *position;json_str[i] != '\0';i++){
-        if(numberOfDot > 1 || numberOfDigit >= 63){
+        char c = json_str[i];
+        int isNumberChar = (c >= '0' && c <= '9') || c == '.' || c == '-' || c == '+' || c == 'e' || c == 'E';
+        // Buffer plein ET encore un caractère du nombre à ajouter -> trop long (comme dans parseNUMBER)
+        if(numberOfDot > 1 || (isNumberChar && numberOfDigit >= BUFFER_DEFAULT_SIZE - 1)){
             free(exp_value.value.string);
             exp_value = initJsonValue(JSON_ERROR);
             return exp_value;
@@ -1505,7 +1514,7 @@ JsonValue parseNUMBER(char* json_str,size_t* position){
     debug("parseNUMBER");
     JsonValue nbr_value = initJsonValue(JSON_ERROR);
 
-    char* number_str = (char*)calloc(64, sizeof(char));
+    char* number_str = (char*)calloc(BUFFER_DEFAULT_SIZE, sizeof(char));
     if(number_str == NULL){
         nbr_value = initJsonValue(JSON_ERROR);
         return nbr_value;
@@ -1519,7 +1528,7 @@ JsonValue parseNUMBER(char* json_str,size_t* position){
 
     for(size_t index=*position;json_str[index] != '\0';index++){
         if((json_str[index] >= 48 && json_str[index] <= 57) || json_str[index] == '-'){
-            if(numberOfDigit >= 63){
+            if(numberOfDigit >= BUFFER_DEFAULT_SIZE - 1){
                 nbr_value = initJsonValue(JSON_ERROR);
                 free(number_str);
                 return nbr_value;
@@ -1626,7 +1635,7 @@ JsonValue parseDECIMAL(char* json_str, size_t* position){
     debug("parseDECIMAL");
     JsonValue dec_value = initJsonValue(JSON_ERROR);
 
-    char* decimal_str = (char*)calloc(64, sizeof(char));
+    char* decimal_str = (char*)calloc(BUFFER_DEFAULT_SIZE, sizeof(char));
     if(decimal_str == NULL){
         dec_value = initJsonValue(JSON_ERROR);
         return dec_value;
@@ -1639,13 +1648,14 @@ JsonValue parseDECIMAL(char* json_str, size_t* position){
     dec_value.type = JSON_DECIMAL;
 
     for(size_t index = *position; json_str[index] != '\0'; index++){
-        if(numberOfDigit >= 63){
-            dec_value = initJsonValue(JSON_ERROR);
-            free(decimal_str);
-            return dec_value;
-        }
         if((json_str[index] >= 48 && json_str[index] <= 57) ||
             json_str[index] == '-' || json_str[index] == '.'){
+            // Testé seulement quand il y a un caractère à ajouter, comme dans parseNUMBER
+            if(numberOfDigit >= BUFFER_DEFAULT_SIZE - 1){
+                dec_value = initJsonValue(JSON_ERROR);
+                free(decimal_str);
+                return dec_value;
+            }
             numberOfDigit++;
             decimal_str[numberOfDigit-1] = json_str[index];
         }else{
@@ -1888,7 +1898,7 @@ int cpyObject(JsonObject* dest,JsonObject* src){
 
     if(dest->listeOfPair == NULL){
         dest->listeOfPair = (JsonPair*)calloc(src->nbOfElement, sizeof(JsonPair));
-        if(dest->listeOfPair == NULL){
+        if(dest->listeOfPair == NULL && src->nbOfElement > 0){
             printf("Erreur : something went wrong during the allocation for an object");
             return 1;
         }
@@ -1902,7 +1912,7 @@ int cpyObject(JsonObject* dest,JsonObject* src){
             dest->listeOfPair = NULL;
         }
         dest->listeOfPair = (JsonPair*)calloc(src->nbOfElement, sizeof(JsonPair));
-        if(dest->listeOfPair == NULL){
+        if(dest->listeOfPair == NULL && src->nbOfElement > 0){
             return 1;
         }
     }
@@ -1962,7 +1972,7 @@ int cpyArray(JsonArray* dest,JsonArray* src){
     }
 
     dest->listeOfValue = (JsonValue*)calloc(src->nbOfElement,sizeof(JsonValue));
-    if(dest->listeOfValue == NULL){
+    if(dest->listeOfValue == NULL && src->nbOfElement > 0){
         printf("Erreur : something went wrong during the allocation for a array");
         return 1;
     }
