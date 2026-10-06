@@ -2280,15 +2280,18 @@ int stringToInt(char* str,long long int* res){
         boolNeg = 1;
         i++;
     }
-    if(len - i >= 19){
-        return 1;
-    }
+
 
     for(; i < len; i++){
         if(str[i] < '0' || str[i] > '9'){
             return 1; // caractère invalide
         }
-        result = result * 10 + (str[i] - '0');
+        int digit = str[i] - '0';
+        if(result > (INT64_MAX - digit) / 10){
+            return 1; // trop grand pour un long long -> parseNUMBER le passera en double
+        }
+        result = result * 10 + digit;
+
     }
     if(boolNeg == 1){
         *res = -result;
