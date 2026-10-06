@@ -6,8 +6,6 @@
 #define DEBUG_VALUE 0
 #define JSON_MAX_DEPTH 512  // Profondeur max d'imbrication ({ et [) acceptée par la validation
 
-size_t g_SIZE = -1;
-
 // Liste de type que peux prendre un JSON
 typedef enum {
     JSON_NULL,          // NULL
@@ -154,14 +152,14 @@ JsonValue initCson(char* path){
     }
     fclose(file);
 
-    g_SIZE = _strlen(json_str);
-    if(g_SIZE == -1){
+    size_t size = _strlen(json_str);
+    if(size == (size_t)-1){
         printf("Error : a problem as occure during the calculation of the size\n");
         return json;
     }
 
     size_t errorPosition = 0;
-    if(validateJson(json_str, g_SIZE, &errorPosition) != 0){
+    if(validateJson(json_str, size, &errorPosition) != 0){
         size_t line = 1;
         size_t column = 1;
         for(size_t i = 0; i < errorPosition; i++){
@@ -745,7 +743,7 @@ int addToArray(JsonArray* ary, JsonValue value, size_t index){
     }
 
     JsonValue* newListe = (JsonValue*)realloc(ary->listeOfValue, (ary->nbOfElement + 1) * sizeof(JsonValue));
-    if(newListe == NULL){
+    if(newListe == NULL){ 
         freeValue(cpy_value);
         return 1;
     }
@@ -1127,10 +1125,6 @@ int isDigitAt(char* json_str, size_t size, size_t pos){
 JsonValue parseOBJ(char* json_str, size_t* position){
     debug("parseOBJ");
     JsonValue obj_value = initJsonValue(JSON_ERROR);
-    if(g_SIZE == -1){
-        obj_value.type = JSON_ERROR;
-        return obj_value;
-    }
 
     size_t capacity = 10;
     obj_value.type = JSON_OBJECT;
@@ -1154,7 +1148,7 @@ JsonValue parseOBJ(char* json_str, size_t* position){
 
     int NumberOfElement = 0;
     size_t index;
-    for(index = *position+1; index<g_SIZE;){
+    for(index = *position+1; json_str[index] != '\0';){
         if(json_str[index] == '}'){
             break;
         }else if(json_str[index] == ','){
@@ -1208,7 +1202,7 @@ JsonValue parseOBJ(char* json_str, size_t* position){
             break;
             case JSON_ERROR: {
                 // Avancer jusqu'au prochain délimiteur
-                while(index < g_SIZE && json_str[index] != ',' && json_str[index] != '}' && json_str[index] != ']') {
+                while(json_str[index] != '\0' && json_str[index] != ',' && json_str[index] != '}' && json_str[index] != ']') {
                     index++;
                 }
                 
@@ -1219,7 +1213,7 @@ JsonValue parseOBJ(char* json_str, size_t* position){
                 NumberOfElement++;
                 
                 // Avancer après la virgule si présente
-                if(index < g_SIZE && json_str[index] == ',') {
+                if(json_str[index] == ',') {
                     index++;
                 }
                 break;
@@ -1268,10 +1262,6 @@ JsonValue parseOBJ(char* json_str, size_t* position){
 JsonValue parseARRAY(char* json_str, size_t* position){
     debug("parseARRAY");
     JsonValue ary_value = initJsonValue(JSON_ERROR);
-    if(g_SIZE == (size_t)-1){
-        ary_value.type = JSON_ERROR;
-        return ary_value;
-    }
 
     size_t capacity = 10;
     ary_value.type = JSON_ARRAY;
@@ -1294,7 +1284,7 @@ JsonValue parseARRAY(char* json_str, size_t* position){
 
     int NumberOfElement = 0;
     size_t index;
-    for( index = *position+1; index<g_SIZE;){
+    for( index = *position+1; json_str[index] != '\0';){
         if(json_str[index] == ']'){
             break;
         }else if(json_str[index] == ','){
@@ -1334,7 +1324,7 @@ JsonValue parseARRAY(char* json_str, size_t* position){
                 NumberOfElement++;
             break;
             case JSON_ERROR:{
-                while(index < g_SIZE && json_str[index] != ',' && json_str[index] != '}' && json_str[index] != ']') {
+                while(json_str[index] != '\0' && json_str[index] != ',' && json_str[index] != '}' && json_str[index] != ']') {
                     index++;
                 }
 
@@ -1343,7 +1333,7 @@ JsonValue parseARRAY(char* json_str, size_t* position){
                 ary_value.value.array->listeOfValue[NumberOfElement] = buffeur;
                 NumberOfElement++;
 
-                if(index < g_SIZE && json_str[index] == ',') {
+                if(json_str[index] == ',') {
                     index++;
                 }
                 break;
@@ -1393,23 +1383,19 @@ JsonValue parseARRAY(char* json_str, size_t* position){
 JsonValue parseSTRING(char* json_str,size_t* position){
     debug("parseSTRING");
     JsonValue str_value = initJsonValue(JSON_ERROR);
-    if(g_SIZE == (size_t)-1){
-        str_value.type = JSON_ERROR;
-        return str_value;
-    }
     str_value.type = JSON_STRING;
     str_value.value.string = NULL;
 
     size_t start = *position;
 
-    if(start >= g_SIZE || json_str[start] != '"') {
+    if(json_str[start] != '"') {
         str_value.type = JSON_ERROR;
         return str_value;
     }
 
     size_t end = start;
 
-    for(size_t index = start + 1; index < g_SIZE; index++){
+    for(size_t index = start + 1; json_str[index] != '\0'; index++){
         if(json_str[index] == '"' && !isEscaped(json_str, index)){
             end = index;
             break;
@@ -1434,10 +1420,6 @@ JsonValue parseSTRING(char* json_str,size_t* position){
 JsonValue parseEXPONENTIAL(char* json_str,size_t* position){
     debug("parseEXPONENTIAL");
     JsonValue exp_value = initJsonValue(JSON_ERROR);
-    if(g_SIZE == (size_t)-1){
-        exp_value.type = JSON_ERROR;
-        return exp_value;
-    }
 
     exp_value.type = JSON_EXPONENTIAL;
     exp_value.value.string = (char*)calloc(64,sizeof(char));
@@ -1448,7 +1430,7 @@ JsonValue parseEXPONENTIAL(char* json_str,size_t* position){
     int numberOfDigit = 0;
     int numberOfDot = 0;
 
-    for(size_t i = *position;i<g_SIZE;i++){
+    for(size_t i = *position;json_str[i] != '\0';i++){
         if(numberOfDot > 1 || numberOfDigit >= 63){
             free(exp_value.value.string);
             exp_value = initJsonValue(JSON_ERROR);
@@ -1472,8 +1454,8 @@ JsonValue parseEXPONENTIAL(char* json_str,size_t* position){
         }
         else if(json_str[i] == 'e' || json_str[i] == 'E'){
             if(i > 0 && (json_str[i-1] >= '0' && json_str[i-1] <= '9')){
-                if(i+1 < g_SIZE && ((json_str[i+1] >= '0' && json_str[i+1] <= '9') ||
-                                json_str[i+1] == '-' || json_str[i+1] == '+')){
+                if((json_str[i+1] >= '0' && json_str[i+1] <= '9') ||
+                                json_str[i+1] == '-' || json_str[i+1] == '+'){
                     exp_value.value.string[numberOfDigit] = json_str[i];
                     numberOfDigit++;
                 }else{
@@ -1503,10 +1485,6 @@ JsonValue parseEXPONENTIAL(char* json_str,size_t* position){
 JsonValue parseNUMBER(char* json_str,size_t* position){
     debug("parseNUMBER");
     JsonValue nbr_value = initJsonValue(JSON_ERROR);
-    if(g_SIZE == (size_t)-1){
-        nbr_value.type = JSON_ERROR;
-        return nbr_value;
-    }
 
     char* number_str = (char*)calloc(64, sizeof(char));
     if(number_str == NULL){
@@ -1520,7 +1498,7 @@ JsonValue parseNUMBER(char* json_str,size_t* position){
     
     nbr_value.type = JSON_NUMBER;
 
-    for(size_t index=*position;index<g_SIZE;index++){
+    for(size_t index=*position;json_str[index] != '\0';index++){
         if((json_str[index] >= 48 && json_str[index] <= 57) || json_str[index] == '-'){
             if(numberOfDigit >= 63){
                 nbr_value = initJsonValue(JSON_ERROR);
@@ -1557,23 +1535,17 @@ JsonValue parseNUMBER(char* json_str,size_t* position){
 JsonValue parseBOOL(char* json_str, size_t* position){
     debug("parseBOOL");
     JsonValue boo_value = initJsonValue(JSON_ERROR);
-    
-    if(g_SIZE == (size_t)-1){
+
+    if(json_str[*position] == '\0'){
         return boo_value;
     }
-    
-    if(*position >= g_SIZE){
-        return boo_value;
+
+    // indexEnd = premier délimiteur, ou le '\0' final s'il n'y en a pas
+    size_t indexEnd = *position;
+    while(json_str[indexEnd] != '\0' && json_str[indexEnd] != ',' && json_str[indexEnd] != '}' && json_str[indexEnd] != ']'){
+        indexEnd++;
     }
-    
-    size_t indexEnd = g_SIZE;
-    for(size_t i = *position; i < g_SIZE; i++){
-        if(json_str[i] == ',' || json_str[i] == '}' || json_str[i] == ']'){
-            indexEnd = i;
-            break;
-        }
-    }
-    
+
     char* buffer = (char*)calloc(indexEnd - (*position) + 1, sizeof(char));
     if(buffer == NULL){
         return boo_value;
@@ -1601,17 +1573,12 @@ JsonValue parseBOOL(char* json_str, size_t* position){
 
 JsonValue parseNULL(char* json_str,size_t* position){
     JsonValue null_value = initJsonValue(JSON_ERROR);
-    if(g_SIZE == -1){
-        return null_value;
-    }
     int state;
 
-    size_t indexEnd = g_SIZE;
-    for(size_t i=*position;i<g_SIZE;i++){
-        if(json_str[i] == ',' || json_str[i] == '}' || json_str[i] == ']'){
-            indexEnd = i;
-            break;
-        }
+    // indexEnd = premier délimiteur, ou le '\0' final s'il n'y en a pas
+    size_t indexEnd = *position;
+    while(json_str[indexEnd] != '\0' && json_str[indexEnd] != ',' && json_str[indexEnd] != '}' && json_str[indexEnd] != ']'){
+        indexEnd++;
     }
     if(*position == indexEnd){
         return null_value;
@@ -1639,10 +1606,6 @@ JsonValue parseNULL(char* json_str,size_t* position){
 JsonValue parseDECIMAL(char* json_str, size_t* position){
     debug("parseDECIMAL");
     JsonValue dec_value = initJsonValue(JSON_ERROR);
-    if(g_SIZE == (size_t)-1){
-        dec_value.type = JSON_ERROR;
-        return dec_value;
-    }
 
     char* decimal_str = (char*)calloc(64, sizeof(char));
     if(decimal_str == NULL){
@@ -1656,7 +1619,7 @@ JsonValue parseDECIMAL(char* json_str, size_t* position){
 
     dec_value.type = JSON_DECIMAL;
 
-    for(size_t index = *position; index < g_SIZE; index++){
+    for(size_t index = *position; json_str[index] != '\0'; index++){
         if(numberOfDigit >= 63){
             dec_value = initJsonValue(JSON_ERROR);
             free(decimal_str);
@@ -2036,29 +1999,29 @@ int loadJson(char** dest,FILE* file){
 
 // Retire les espaces hors des strings en une seule passe.
 // dest peut pointer sur src (nettoyage sur place) : indexWrite <= i, on n'écrase jamais un char pas encore lu.
-// Si *dest est NULL, un buffer de g_SIZE+1 octets est alloué (le résultat n'est jamais plus long que src).
+// Si *dest est NULL, un buffer de _strlen(src)+1 octets est alloué (le résultat n'est jamais plus long que src).
 int whitespaceCleaner(char* src,char** dest){
     size_t indexWrite = 0;
     int insideString = 0;
 
-    if(src == NULL || dest == NULL || g_SIZE == (size_t)-1){
+    if(src == NULL || dest == NULL){
         return 1;
     }
     if(*dest == NULL){
-        *dest = (char*)malloc(g_SIZE + 1);
+        *dest = (char*)malloc(_strlen(src) + 1);
         if(*dest == NULL){
             return 1;
         }
     }
 
-    for(size_t i=0;i<g_SIZE;i++){
+    for(size_t i=0;src[i] != '\0';i++){
         char c = src[i];
 
         if(insideString){
             // Dans une string on garde tout, espaces compris
             (*dest)[indexWrite] = c;
             indexWrite++;
-            if(c == '\\' && i + 1 < g_SIZE){
+            if(c == '\\' && src[i + 1] != '\0'){
                 // Séquence d'échappement (\" \\ \n ...) : on recopie aussi le char suivant,
                 // sinon un \" serait pris pour la fin de la string
                 i++;
@@ -2081,7 +2044,6 @@ int whitespaceCleaner(char* src,char** dest){
     }
 
     (*dest)[indexWrite] = '\0';
-    g_SIZE = indexWrite;
     return 0;
 }
 
@@ -2109,16 +2071,13 @@ JsonType getType(char* json_str,size_t position){
                 case '-':
         case '0' ... '9' : {
             size_t index = position;
-            if(g_SIZE == (size_t)-1){
-                return JSON_ERROR;
-            }
             int boolEXP = 0;
             int boolDEC = 0;
 
             if(json_str[index] == '-'){
                 index++;
             }
-            while(index < g_SIZE && 
+            while(json_str[index] != '\0' &&
                 ((json_str[index] >= '0' && json_str[index] <= '9') ||
                 json_str[index] == '.' ||
                 json_str[index] == 'e' || json_str[index] == 'E' ||
@@ -2218,11 +2177,7 @@ int _strcpybxy(char **dest, char *src, int x, int y){
         return 1;
     }
 
-    int lenSrc = g_SIZE;
-    if(g_SIZE == (size_t)-1){
-        lenSrc = _strlen(src);
-    }
-    if (x < 0 || y >= lenSrc || y < x) {
+    if (x < 0 || y < x) {
         return 1;
     }
 
