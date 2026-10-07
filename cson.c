@@ -97,7 +97,7 @@ int modifyArray(JsonArray* ary,JsonValue value,size_t index);
 
 //gets
 JsonValue* getValueFromObject(JsonObject* obj,char* key);
-int getIndexFromObject(JsonObject* obj,char* key);
+size_t getIndexFromObject(JsonObject* obj,char* key);
 
 // frees
 void freeValue(JsonValue value);
@@ -223,7 +223,11 @@ void printfValue(JsonValue value){
             printf("ERROR\n");
         break;
         case JSON_EXPONENTIAL:
+        if(value.value.string == NULL){
+            printf("null");
+        }else{
             printf("%s",value.value.string);
+        }
         break;
         case JSON_NULL:
             printf("null");
@@ -432,8 +436,13 @@ int fprintfValue(FILE* file, JsonValue value){
             fprintf(file,"ERROR");
         break;
         case JSON_EXPONENTIAL:
-            fprintf(file,"%s",value.value.string);
+            if(value.value.string == NULL){
+                fprintf(file,"null");
+            }else{
+                fprintf(file,"%s",value.value.string);
+            }
         break;
+
         case JSON_NULL:
             fprintf(file,"null");
         break;
@@ -719,7 +728,7 @@ int addToObject(JsonObject* obj, char* key, JsonValue value,size_t index){
         return 1;
     }
 
-    if(getIndexFromObject(obj,key) != -1){
+    if(getIndexFromObject(obj,key) != (size_t)-1){
         return 1;
     }
 
@@ -881,6 +890,9 @@ int modifyArray(JsonArray* ary, JsonValue value, size_t index){
 //////////////////////////////////////////// get function ////////////////////////////////////////////
 
 JsonValue* getValueFromObject(JsonObject* obj,char* key){
+    if(obj == NULL){
+        return NULL;
+    }
     for(size_t i=0;i<obj->nbOfElement;i++){
         if(_strcmp(obj->listeOfPair[i].key,key) == 0){
             return &obj->listeOfPair[i].value;
@@ -890,14 +902,17 @@ JsonValue* getValueFromObject(JsonObject* obj,char* key){
     return NULL;
 }
 
-int getIndexFromObject(JsonObject* obj,char* key){
+size_t getIndexFromObject(JsonObject* obj,char* key){
+    if(obj == NULL){
+        return (size_t)-1;
+    }
     for(size_t i=0;i<obj->nbOfElement;i++){
         if(_strcmp(obj->listeOfPair[i].key,key) == 0){
-            return (int)i;
+            return i;
         }
     }
 
-    return -1;
+    return (size_t)-1;
 }
 
 //////////////////////////////////////////// validation function ////////////////////////////////////////////
@@ -1150,6 +1165,7 @@ int isDigitAt(char* json_str, size_t size, size_t pos){
 JsonValue parseOBJ(char* json_str, size_t* position){
     debug("parseOBJ");
     JsonValue obj_value = initJsonValue(JSON_ERROR);
+    int state;
 
     size_t capacity = 10;
     obj_value.type = JSON_OBJECT;
@@ -1203,8 +1219,14 @@ JsonValue parseOBJ(char* json_str, size_t* position){
             return obj_value;
         }
         buffeur_pair.key = NULL;
-        _strcpy(&buffeur_pair.key, buffeur_value.value.string);
+        state = _strcpy(&buffeur_pair.key, buffeur_value.value.string);
         freeValue(buffeur_value);
+        if(state){
+            obj_value.value.object->nbOfElement = NumberOfElement;
+            freeObject(obj_value.value.object);
+            obj_value = initJsonValue(JSON_ERROR);
+            return obj_value;
+        }
         index++;
 
         before = index;
@@ -1433,9 +1455,15 @@ JsonValue parseSTRING(char* json_str,size_t* position){
     }
 
     if(end == start + 1) {
-        _strcpy(&str_value.value.string, "");
+        if(_strcpy(&str_value.value.string, "")){
+            str_value.type = JSON_ERROR;
+            return str_value;
+        };
     }else if(end > start) {
-        _strcpybxy(&str_value.value.string, json_str, (int)start+1, (int)end-1);
+        if(_strcpybxy(&str_value.value.string, json_str, (int)start+1, (int)end-1)){
+            str_value.type = JSON_ERROR;
+            return str_value;
+        }
     }
 
     *position = end + 1;
