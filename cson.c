@@ -117,6 +117,7 @@ void printfObject(int* depth, JsonObject obj);
 
 // fprintf
 int fprintfValue(FILE* file,JsonValue value);
+char localeDecimalPoint(void);
 void fprintfDouble(FILE* file, double d);
 void fprintfObject(FILE* file, int* depth, JsonObject obj);
 void fprintfArray(FILE* file, int* depth, JsonArray ary);
@@ -128,10 +129,10 @@ int _strchr(char* str,char c);
 int _strcpybxy(char **dest, char *src, int x, int y);
 int _strchrxt(char * str,char x,int avoid);
 int _strcpy(char** dest,char* src);
+int _strtod(char* str,double *res);
 
 // conversion to str to x
-int stringToInt(char* str,long long int* res);
-int stringToDouble(char* str, double* res);
+int _strtoi(char* str,long long int* res);
 
 void debug(char* str);
 
@@ -393,24 +394,46 @@ void fprintfXtab(FILE* file, int x){
     }
 }
 
-// Écrit un double avec juste assez de chiffres après la virgule pour le relire à l'identique.
-// Toujours avec un '.', jamais d'exposant : la relecture redonne bien un JSON_DECIMAL.
+// Séparateur décimal de la locale actuelle : '.' par défaut, ',' si le programme a fait setlocale(LC_ALL, "fr_FR...")
+// On le demande à snprintf : il l'utilise pour écrire 0.5
+char localeDecimalPoint(void){
+    char buffer[8];
+    snprintf(buffer, sizeof(buffer), "%.1f", 0.5);
+    return buffer[1];
+}
+
 void fprintfDouble(FILE* file, double d){
     char buffer[BUFFER_DEFAULT_SIZE];   // au plus BUFFER_DEFAULT_SIZE - 1 caractères + '\0', comme à la lecture
+    char point = localeDecimalPoint();
     double check;
-    for(int precision = 1; precision <= 60; precision++){
+    int found = 0;
+    for(int precision = 1; precision <= 60 && !found; precision++){
         int len = snprintf(buffer, sizeof(buffer), "%.*f", precision, d);
         if(len >= (int)sizeof(buffer)){
             break;   // trop long : ajouter des chiffres ne fera que l'allonger
         }
-        if(stringToDouble(buffer, &check) == 0 && check == d){
-            fprintf(file, "%s", buffer);
-            return;
+        // snprintf suit la locale (',' en français) : le JSON et _strtod veulent un '.'
+        for(int i = 0; buffer[i] != '\0'; i++){
+            if(buffer[i] == point){
+                buffer[i] = '.';
+            }
+        }
+        if(_strtod(buffer, &check) == 0 && check == d){
+            found = 1;
         }
     }
-    // Cas extrêmes (1e-300, 1e70...) : impossible sans exposant en BUFFER_DEFAULT_SIZE - 1 caractères
-    fprintf(file, "%.17g", d);
+    if(!found){
+        // Trop précis pour _strtod (0.1 + 0.2, 1e300...) : 17 chiffres, sera relu en texte
+        snprintf(buffer, sizeof(buffer), "%.17g", d);
+        for(int i = 0; buffer[i] != '\0'; i++){
+            if(buffer[i] == point){
+                buffer[i] = '.';
+            }
+        }
+    }
+    fprintf(file, "%s", buffer);
 }
+
 
 int fprintfValue(FILE* file, JsonValue value){
     int depth = 0;
@@ -808,10 +831,9 @@ int removeToObject(JsonObject* obj, size_t index){
         obj->listeOfPair = NULL;
     }else{
         JsonPair* newListe = (JsonPair*)realloc(obj->listeOfPair, obj->nbOfElement * sizeof(JsonPair));
-        if(newListe == NULL){
-            return 1;
+        if(newListe != NULL){
+            obj->listeOfPair = newListe;
         }
-        obj->listeOfPair = newListe;
     }
 
     return 0;
@@ -835,10 +857,9 @@ int removeToArray(JsonArray* ary, size_t index){
         ary->listeOfValue = NULL;
     }else{
         JsonValue* newListe = (JsonValue*)realloc(ary->listeOfValue, ary->nbOfElement * sizeof(JsonValue));
-        if(newListe == NULL){
-            return 1;
+        if(newListe != NULL){
+            ary->listeOfValue = newListe;
         }
-        ary->listeOfValue = newListe;
     }
 
     return 0;
@@ -1186,6 +1207,7 @@ JsonValue parseOBJ(char* json_str, size_t* position){
     JsonPair buffeur_pair;
     JsonValue buffeur_value;
     buffeur_value.value.string = NULL;
+    
 
     int NumberOfElement = 0;
     size_t index;
@@ -1220,6 +1242,17 @@ JsonValue parseOBJ(char* json_str, size_t* position){
         }
         buffeur_pair.key = NULL;
         state = _strcpy(&buffeur_pair.key, buffeur_value.value.string);
+        for(int i=0;i<NumberOfElement;i++){
+            if(_strcmp(buffeur_pair.key,obj_value.value.object->listeOfPair[i].key) == 0){
+                printf("Error : Duplicate key \"%s\"\n",buffeur_pair.key);
+                free(buffeur_pair.key);
+                freeValue(buffeur_value);
+                obj_value.value.object->nbOfElement = NumberOfElement;
+                freeObject(obj_value.value.object);
+                obj_value = initJsonValue(JSON_ERROR);
+                return obj_value;
+            }
+        }
         freeValue(buffeur_value);
         if(state){
             obj_value.value.object->nbOfElement = NumberOfElement;
@@ -1568,13 +1601,14 @@ JsonValue parseNUMBER(char* json_str,size_t* position){
         }
     }
     number_str[numberOfDigit] = '\0';
-    state = stringToInt(number_str,&number_int);
+    state = _strtoi(number_str,&number_int);
     if(state == 1){
         // Trop long pour un long long -> on le garde en double (valeur approchée)
         double number_double;
-        if(stringToDouble(number_str, &number_double)){
-            nbr_value = initJsonValue(JSON_ERROR);
-            free(number_str);
+        if(_strtod(number_str, &number_double)){
+            nbr_value.type = JSON_EXPONENTIAL;
+            nbr_value.value.string = number_str;   // pas de free : la valeur garde le texte
+            *position = *position + numberOfDigit;
             return nbr_value;
         }
         nbr_value.type = JSON_DECIMAL;
@@ -1692,10 +1726,11 @@ JsonValue parseDECIMAL(char* json_str, size_t* position){
     }
     decimal_str[numberOfDigit] = '\0';
     
-    state = stringToDouble(decimal_str, &decimal_double);
+    state = _strtod(decimal_str, &decimal_double);
     if(state == 1){
-        dec_value = initJsonValue(JSON_ERROR);
-        free(decimal_str);
+        dec_value.type = JSON_EXPONENTIAL;
+        dec_value.value.string = decimal_str;   // pas de free : la valeur garde le texte
+        *position = *position + numberOfDigit;
         return dec_value;
     }
     
@@ -2193,6 +2228,7 @@ size_t _strlen(char* str){
     return i;
 }
 
+// 0 -> Same | 1 -> Not the same
 int _strcmp(char* str1,char* str2){
     if(str1 == NULL){
         if(str2 == NULL){
@@ -2299,7 +2335,7 @@ int _strcpy(char** dest,char* src){
     return 0;
 }
 
-int stringToInt(char* str,long long int* res){
+int _strtoi(char* str,long long int* res){
     if(str == NULL){
         return 1;
     }
@@ -2339,19 +2375,63 @@ int stringToInt(char* str,long long int* res){
     return 0;
 }
 
-int stringToDouble(char* str, double* res){
+int _strtod(char* str,double *res){
     if(str == NULL){
         return 1;
     }
-    
-    char* endptr;
-    *res = strtod(str, &endptr);
-    
-    // Vérifier si la conversion a échoué
-    if(endptr == str){
+    size_t sizeOfStr = _strlen(str);
+    if(sizeOfStr == (size_t)-1 || sizeOfStr == 0){
         return 1;
     }
-    
+    if(sizeOfStr == 1 && str[0] == '-'){
+        return 1;
+    }
+    int boolNeg = 0;
+    if(str[0] == '-'){
+        boolNeg = 1;
+    }
+
+    long long int mantisse = 0;
+    int nbrSignificatif = 0;
+    int nbrApresVirgule = 0;
+    int boolAfterDot = 0;
+    for(size_t i = 0;i<sizeOfStr;i++){
+        if((str[i] >= '0' && str[i] <= '9') || str[i] == '-' || str[i] == '.'){
+            if(str[i] >= '0' && str[i] <= '9'){
+                mantisse = mantisse * 10 + (str[i] - '0');
+                if(nbrSignificatif > 0 || str[i] != '0'){
+                    nbrSignificatif ++;
+                    if(nbrSignificatif > 15){
+                        return 1;
+                    }
+                }
+            }
+            if(boolAfterDot == 1){
+                nbrApresVirgule ++;
+                if(nbrApresVirgule > 22){
+                    return 1;
+                }
+            }
+            if(str[i] == '.'){
+                if(boolAfterDot == 1){
+                    return 1;
+                }else{
+                    boolAfterDot = 1;
+                }
+            }
+        }else{
+            return 1;
+        }
+    }
+    double power = 1;
+    for(int i=0;i<nbrApresVirgule;i++){
+        power = power * 10.0;
+    }
+    *res = (double)mantisse / power;
+    if(boolNeg == 1){
+        *res = -1.0 * (*res);
+    }
+
     return 0;
 }
 
