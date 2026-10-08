@@ -143,18 +143,21 @@ JsonValue initCson(char* path){
     FILE* file = fopen(path, "rb");
     if(file == NULL){
         printf("Error : impossible to open JSON file\n");
+        json.value.string = "cannot open file";
         return json;
     }
 
     char* json_str = NULL;
     state = loadJson(&json_str, file);
     if(state == 1) {
-        printf("Error : impossible to load the JSON file (to big?)\n");
+        printf("Error : impossible to load the JSON file (too big?)\n");
+        json.value.string = "cannot load file";
         fclose(file);
         free(json_str);
         return json;
     }else if(state == 2){
         printf("Error : the JSon file contain NUL byte(s)\n");
+        json.value.string = "NUL byte in file";
         fclose(file);
         free(json_str);
         return json;
@@ -164,6 +167,7 @@ JsonValue initCson(char* path){
     size_t size = _strlen(json_str);
     if(size == (size_t)-1){
         printf("Error : a problem as occure during the calculation of the size\n");
+        json.value.string = "cannot compute size";
         return json;
     }
 
@@ -188,6 +192,7 @@ JsonValue initCson(char* path){
             }
         }
         printf("Error : invalid JSON at line %zu, column %zu\n", line, column);
+        json.value.string = "invalid JSON";
         free(json_str);
         return json;
     }
@@ -650,6 +655,7 @@ int newJsonObject(JsonValue* dest){
     dest->value.object =(JsonObject*)malloc(sizeof(JsonObject));
     if(dest->value.object == NULL){
         dest->type = JSON_ERROR;
+        dest->value.string = "out of memory";
         return 1;
     }
     dest->value.object->nbOfElement = 0;
@@ -666,6 +672,7 @@ int newJsonArray(JsonValue* dest){
     dest->value.array = (JsonArray*)malloc(sizeof(JsonArray));
     if(dest->value.array == NULL){
         dest->type = JSON_ERROR;
+        dest->value.string = "out of memory";
         return 1;
     }
     dest->value.array->nbOfElement = 0;
@@ -686,6 +693,7 @@ int newJsonString(JsonValue* dest,char* str){
     state = _strcpy(&dest->value.string,str);
     if(state){
         dest->type = JSON_ERROR;
+        dest->value.string = "out of memory";
         return 1;
     }
     
@@ -751,6 +759,7 @@ int newJsonExponencial(JsonValue* dest,char* exp){
     state = _strcpy(&dest->value.string,exp);
     if(state){
         dest->type = JSON_ERROR;
+        dest->value.string = "out of memory";
         return 1;
     }
     
@@ -1208,6 +1217,7 @@ JsonValue parseOBJ(char* json_str, size_t* position){
     obj_value.value.object = (JsonObject*)malloc(sizeof(JsonObject));
     if(obj_value.value.object == NULL){
         obj_value = initJsonValue(JSON_ERROR);
+        obj_value.value.string = "out of memory";
         return obj_value;
     }
     obj_value.value.object->nbOfElement = 0;
@@ -1215,6 +1225,7 @@ JsonValue parseOBJ(char* json_str, size_t* position){
     if(obj_value.value.object->listeOfPair == NULL){
         free(obj_value.value.object);
         obj_value = initJsonValue(JSON_ERROR);
+        obj_value.value.string = "out of memory";
         return obj_value;
     }
 
@@ -1222,7 +1233,6 @@ JsonValue parseOBJ(char* json_str, size_t* position){
     JsonPair buffeur_pair;
     JsonValue buffeur_value;
     buffeur_value.value.string = NULL;
-    
 
     int NumberOfElement = 0;
     size_t index;
@@ -1241,6 +1251,7 @@ JsonValue parseOBJ(char* json_str, size_t* position){
                 obj_value.value.object->nbOfElement = NumberOfElement;
                 freeObject(obj_value.value.object);
                 obj_value = initJsonValue(JSON_ERROR);
+                obj_value.value.string = "out of memory";
                 return obj_value;
             }
             obj_value.value.object->listeOfPair = tmp;
@@ -1253,6 +1264,7 @@ JsonValue parseOBJ(char* json_str, size_t* position){
             obj_value.value.object->nbOfElement = NumberOfElement;
             freeObject(obj_value.value.object);
             obj_value = initJsonValue(JSON_ERROR);
+            obj_value.value.string = "object key is not a string";
             return obj_value;
         }
         buffeur_pair.key = NULL;
@@ -1265,6 +1277,7 @@ JsonValue parseOBJ(char* json_str, size_t* position){
                 obj_value.value.object->nbOfElement = NumberOfElement;
                 freeObject(obj_value.value.object);
                 obj_value = initJsonValue(JSON_ERROR);
+                obj_value.value.string = "duplicate key";
                 return obj_value;
             }
         }
@@ -1273,6 +1286,7 @@ JsonValue parseOBJ(char* json_str, size_t* position){
             obj_value.value.object->nbOfElement = NumberOfElement;
             freeObject(obj_value.value.object);
             obj_value = initJsonValue(JSON_ERROR);
+            obj_value.value.string = "out of memory";
             return obj_value;
         }
         index++;
@@ -1302,6 +1316,7 @@ JsonValue parseOBJ(char* json_str, size_t* position){
                 }
                 
                 JsonValue errorValue = initJsonValue(JSON_ERROR);
+                errorValue.value.string = "unknown value type";
                 
                 buffeur_pair.value = errorValue;
                 obj_value.value.object->listeOfPair[NumberOfElement] = buffeur_pair;
@@ -1345,6 +1360,7 @@ JsonValue parseOBJ(char* json_str, size_t* position){
             obj_value.value.object->nbOfElement = NumberOfElement;
             freeObject(obj_value.value.object);
             obj_value = initJsonValue(JSON_ERROR);
+            obj_value.value.string = "invalid value in object";
             return obj_value;
         }
     }
@@ -1363,6 +1379,7 @@ JsonValue parseARRAY(char* json_str, size_t* position){
     ary_value.value.array = (JsonArray*)malloc(sizeof(JsonArray));
     if(ary_value.value.array == NULL){
         ary_value = initJsonValue(JSON_ERROR);
+        ary_value.value.string = "out of memory";
         return ary_value;
     }
     ary_value.value.array->nbOfElement = 0;
@@ -1370,6 +1387,7 @@ JsonValue parseARRAY(char* json_str, size_t* position){
     if(ary_value.value.array->listeOfValue == NULL){
         free(ary_value.value.array);
         ary_value = initJsonValue(JSON_ERROR);
+        ary_value.value.string = "out of memory";
         return ary_value;
     }
 
@@ -1394,6 +1412,7 @@ JsonValue parseARRAY(char* json_str, size_t* position){
                 ary_value.value.array->nbOfElement = NumberOfElement;
                 freeArray(ary_value.value.array);
                 ary_value = initJsonValue(JSON_ERROR);
+                ary_value.value.string = "out of memory";
                 return ary_value;
             }
             ary_value.value.array->listeOfValue = tmp;
@@ -1424,6 +1443,7 @@ JsonValue parseARRAY(char* json_str, size_t* position){
                 }
 
                 buffeur = initJsonValue(JSON_ERROR);
+                buffeur.value.string = "unknown value type";
 
                 ary_value.value.array->listeOfValue[NumberOfElement] = buffeur;
                 NumberOfElement++;
@@ -1466,6 +1486,7 @@ JsonValue parseARRAY(char* json_str, size_t* position){
             ary_value.value.array->nbOfElement = NumberOfElement;
             freeArray(ary_value.value.array);
             ary_value = initJsonValue(JSON_ERROR);
+            ary_value.value.string = "invalid value in array";
             return ary_value;
         }
     }
@@ -1485,6 +1506,7 @@ JsonValue parseSTRING(char* json_str,size_t* position){
 
     if(json_str[start] != '"') {
         str_value.type = JSON_ERROR;
+        str_value.value.string = "string without opening quote";
         return str_value;
     }
 
@@ -1499,17 +1521,20 @@ JsonValue parseSTRING(char* json_str,size_t* position){
 
     if(end == start){
         str_value.type = JSON_ERROR;
+        str_value.value.string = "string without closing quote";
         return str_value;
     }
 
     if(end == start + 1) {
         if(_strcpy(&str_value.value.string, "")){
             str_value.type = JSON_ERROR;
+            str_value.value.string = "out of memory";
             return str_value;
         };
     }else if(end > start) {
         if(_strcpybxy(&str_value.value.string, json_str, (int)start+1, (int)end-1)){
             str_value.type = JSON_ERROR;
+            str_value.value.string = "out of memory";
             return str_value;
         }
     }
@@ -1526,6 +1551,7 @@ JsonValue parseEXPONENTIAL(char* json_str,size_t* position){
     exp_value.value.string = (char*)calloc(BUFFER_DEFAULT_SIZE,sizeof(char));
     if(exp_value.value.string == NULL){
         exp_value = initJsonValue(JSON_ERROR);
+        exp_value.value.string = "out of memory";
         return exp_value;
     }
     int numberOfDigit = 0;
@@ -1538,6 +1564,7 @@ JsonValue parseEXPONENTIAL(char* json_str,size_t* position){
         if(numberOfDot > 1 || (isNumberChar && numberOfDigit >= BUFFER_DEFAULT_SIZE - 1)){
             free(exp_value.value.string);
             exp_value = initJsonValue(JSON_ERROR);
+            exp_value.value.string = "invalid exponent";
             return exp_value;
         }
         if((json_str[i] >= '0' && json_str[i] <= '9') || json_str[i] == '.' || json_str[i] == '-' || json_str[i] == '+'){
@@ -1548,6 +1575,7 @@ JsonValue parseEXPONENTIAL(char* json_str,size_t* position){
                 if(!isStart && !isAfterExp){
                     free(exp_value.value.string);
                     exp_value = initJsonValue(JSON_ERROR);
+                    exp_value.value.string = "invalid exponent";
                     return exp_value;
                 }
             }else if(json_str[i] == '.'){
@@ -1565,11 +1593,13 @@ JsonValue parseEXPONENTIAL(char* json_str,size_t* position){
                 }else{
                     free(exp_value.value.string);
                     exp_value = initJsonValue(JSON_ERROR);
+                    exp_value.value.string = "invalid exponent";
                     return exp_value;
                 }
             }else{
                 free(exp_value.value.string);
                 exp_value = initJsonValue(JSON_ERROR);
+                exp_value.value.string = "invalid exponent";
                 return exp_value;
             }
         }
@@ -1593,6 +1623,7 @@ JsonValue parseNUMBER(char* json_str,size_t* position){
     char* number_str = (char*)calloc(BUFFER_DEFAULT_SIZE, sizeof(char));
     if(number_str == NULL){
         nbr_value = initJsonValue(JSON_ERROR);
+        nbr_value.value.string = "out of memory";
         return nbr_value;
     }
     long long int number_int;
@@ -1606,6 +1637,7 @@ JsonValue parseNUMBER(char* json_str,size_t* position){
         if((json_str[index] >= 48 && json_str[index] <= 57) || json_str[index] == '-'){
             if(numberOfDigit >= BUFFER_DEFAULT_SIZE - 1){
                 nbr_value = initJsonValue(JSON_ERROR);
+                nbr_value.value.string = "number too long";
                 free(number_str);
                 return nbr_value;
             }
@@ -1640,6 +1672,7 @@ JsonValue parseNUMBER(char* json_str,size_t* position){
 JsonValue parseBOOL(char* json_str, size_t* position){
     debug("parseBOOL");
     JsonValue boo_value = initJsonValue(JSON_ERROR);
+    boo_value.value.string = "invalid boolean";   // remplacé si on trouve true ou false
 
     if(json_str[*position] == '\0'){
         return boo_value;
@@ -1653,11 +1686,13 @@ JsonValue parseBOOL(char* json_str, size_t* position){
 
     char* buffer = (char*)calloc(indexEnd - (*position) + 1, sizeof(char));
     if(buffer == NULL){
+        boo_value.value.string = "out of memory";
         return boo_value;
     }
     
     int state = _strcpybxy(&buffer, json_str, (int)*position, (int)(indexEnd - 1));
     if(state == 1){
+        boo_value.value.string = "out of memory";
         free(buffer);
         *position = indexEnd;
         return boo_value;
@@ -1678,6 +1713,7 @@ JsonValue parseBOOL(char* json_str, size_t* position){
 
 JsonValue parseNULL(char* json_str,size_t* position){
     JsonValue null_value = initJsonValue(JSON_ERROR);
+    null_value.value.string = "invalid null";   // remplacé si on trouve null
     int state;
 
     // indexEnd = premier délimiteur, ou le '\0' final s'il n'y en a pas
@@ -1691,10 +1727,12 @@ JsonValue parseNULL(char* json_str,size_t* position){
 
     char* buffer =(char*)calloc(indexEnd-(*position)+1,sizeof(char));
     if(buffer == NULL){
+        null_value.value.string = "out of memory";
         return null_value;
     }
     state = _strcpybxy(&buffer,json_str,(int)*position,indexEnd-1);
     if(state == 1){
+        null_value.value.string = "out of memory";
         *position = indexEnd;
         free(buffer);
         return null_value;
@@ -1715,6 +1753,7 @@ JsonValue parseDECIMAL(char* json_str, size_t* position){
     char* decimal_str = (char*)calloc(BUFFER_DEFAULT_SIZE, sizeof(char));
     if(decimal_str == NULL){
         dec_value = initJsonValue(JSON_ERROR);
+        dec_value.value.string = "out of memory";
         return dec_value;
     }
     double decimal_double;
@@ -1730,6 +1769,7 @@ JsonValue parseDECIMAL(char* json_str, size_t* position){
             // Testé seulement quand il y a un caractère à ajouter, comme dans parseNUMBER
             if(numberOfDigit >= BUFFER_DEFAULT_SIZE - 1){
                 dec_value = initJsonValue(JSON_ERROR);
+                dec_value.value.string = "number too long";
                 free(decimal_str);
                 return dec_value;
             }
@@ -1778,6 +1818,7 @@ JsonValue parseValue(char* json_str, size_t* position) {
             return parseEXPONENTIAL(json_str, position);
         default: {
             JsonValue error_value = initJsonValue(JSON_ERROR);
+            error_value.value.string = "unknown value type";
             return error_value;
         }
     }
@@ -1894,7 +1935,7 @@ int cpyValue(JsonValue* dest,JsonValue* src){
                 dest->value.integer = 0;
             }else{
                 dest->type = JSON_ERROR;
-                dest->value.integer = 0;
+                dest->value.string = "invalid boolean";
                 return 1;
             }
         break;
@@ -1924,6 +1965,7 @@ int cpyValue(JsonValue* dest,JsonValue* src){
                 printf("Error : copy of value (Array) had a problem...\n");
                 free(dest->value.array);
                 *dest = initJsonValue(JSON_ERROR);
+                dest->value.string = "copy failed";
                 return 1;
             }
         break;
@@ -1941,6 +1983,7 @@ int cpyValue(JsonValue* dest,JsonValue* src){
                 printf("Error : copy of value (Object) had a problem...\n");
                 free(dest->value.object);
                 *dest = initJsonValue(JSON_ERROR);
+                dest->value.string = "copy failed";
                 return 1;
             }
         break;
@@ -1957,7 +2000,7 @@ int cpyValue(JsonValue* dest,JsonValue* src){
             }
         break;
         case JSON_ERROR :
-            dest->value.integer = 0;
+            dest->value.string = src->value.string;   // message constant : on copie juste le pointeur
         break;
         default :
             printf("Error : unknow type...\n");
@@ -2091,10 +2134,11 @@ int loadJson(char** dest,FILE* file){
             return 1;
         }
     }else{
-        *dest = realloc(*dest,(size+1)*sizeof(char));
-        if((*dest) == NULL){
+        char* tmp = (char*)realloc(*dest,(size+1)*sizeof(char));
+        if(tmp == NULL){
             return 1;
         }
+        *dest = tmp;
     }
     // On lit tout le fichier et le décale dans dest
     long read = fread(*dest,1,size,file);
