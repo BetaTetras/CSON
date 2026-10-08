@@ -41,12 +41,12 @@ typedef struct JsonPair{
 }JsonPair;
 
 typedef struct JsonArray{
-    int nbOfElement;
+    size_t nbOfElement;
     JsonValue * listeOfValue;
 }JsonArray;
 
 typedef struct JsonObject{
-    int nbOfElement;
+    size_t nbOfElement;
     JsonPair * listeOfPair;
 }JsonObject;
 
@@ -110,10 +110,7 @@ int cpyObject(JsonObject* dest,JsonObject* src);
 int cpyArray(JsonArray* dest,JsonArray* src);
 
 // printf
-void printfXtab(int x);
 void printfValue(JsonValue value);
-void printfArray(int* depth, JsonArray ary);
-void printfObject(int* depth, JsonObject obj);
 
 // fprintf
 int fprintfValue(FILE* file,JsonValue value);
@@ -142,7 +139,7 @@ JsonValue initCson(char* path){
 
     FILE* file = fopen(path, "rb");
     if(file == NULL){
-        printf("Error : impossible to open JSON file\n");
+        fprintf(stderr, "Error : unable to open the JSON file\n");
         json.value.string = "cannot open file";
         return json;
     }
@@ -150,13 +147,13 @@ JsonValue initCson(char* path){
     char* json_str = NULL;
     state = loadJson(&json_str, file);
     if(state == 1) {
-        printf("Error : impossible to load the JSON file (too big?)\n");
+        fprintf(stderr, "Error : unable to load the JSON file (too big?)\n");
         json.value.string = "cannot load file";
         fclose(file);
         free(json_str);
         return json;
     }else if(state == 2){
-        printf("Error : the JSon file contain NUL byte(s)\n");
+        fprintf(stderr, "Error : the JSON file contains NUL byte(s)\n");
         json.value.string = "NUL byte in file";
         fclose(file);
         free(json_str);
@@ -166,7 +163,7 @@ JsonValue initCson(char* path){
     
     size_t size = _strlen(json_str);
     if(size == (size_t)-1){
-        printf("Error : a problem as occure during the calculation of the size\n");
+        fprintf(stderr, "Error : a problem occurred while computing the size\n");
         json.value.string = "cannot compute size";
         return json;
     }
@@ -191,7 +188,7 @@ JsonValue initCson(char* path){
                 column++;
             }
         }
-        printf("Error : invalid JSON at line %zu, column %zu\n", line, column);
+        fprintf(stderr, "Error : invalid JSON at line %zu, column %zu\n", line, column);
         json.value.string = "invalid JSON";
         free(json_str);
         return json;
@@ -214,197 +211,13 @@ JsonValue initJsonValue(JsonType type){
 
 //////////////////////////////////////////// printf function ////////////////////////////////////////////
 
-void printfXtab(int x){
-    for(int i=0;i<x;i++){
-        printf("  ");
-    }
-}
 
+// Affiche la valeur à l'écran : exactement ce que fprintfValue écrirait dans un fichier
 void printfValue(JsonValue value){
-    int depth = 0;
-    switch(value.type){
-        case JSON_ARRAY:
-            printfArray(&depth,*value.value.array);
-        break;
-        case JSON_BOOL:{
-            if(value.value.integer == 1){
-                printf("true");
-            }else if(value.value.integer == 0){
-                printf("false");
-            }else{
-                printf("Boolean error");
-            }
-            break;
-        }
-        
-        case JSON_DECIMAL:
-            fprintfDouble(stdout,value.value.decimal);
-        break;
-        case JSON_ERROR:
-            printf("ERROR\n");
-        break;
-        case JSON_EXPONENTIAL:
-        if(value.value.string == NULL){
-            printf("null");
-        }else{
-            printf("%s",value.value.string);
-        }
-        break;
-        case JSON_NULL:
-            printf("null");
-        break;
-        case JSON_NUMBER:
-            printf("%lld",value.value.integer);
-        break;
-        case JSON_OBJECT:
-            printfObject(&depth,*value.value.object);
-        break;
-        case JSON_STRING:
-            if(value.value.string == NULL) printf("null");
-            else printf("\"%s\"", value.value.string);
-        break;
-        default:
-            printf("error print");
-    }
-    return;
+    fprintfValue(stdout, value);
 }
 
-void printfArray(int* depth,JsonArray ary){
-    size_t numberOfElement = (size_t)ary.nbOfElement;
-    printf("[");
-    if(ary.nbOfElement == 0) {
-        printf("]");
-        return;
-    }
-    for(size_t i=0;i<numberOfElement;i++){
-        switch(ary.listeOfValue[i].type){
-            case JSON_OBJECT:
-                printfObject(depth,*ary.listeOfValue[i].value.object);
-            break;
-            case JSON_ARRAY:
-                printfArray(depth,*ary.listeOfValue[i].value.array);
-            break;
-            case JSON_BOOL:{
-                if(ary.listeOfValue[i].value.integer == 1){
-                    printf("true");
-                }else if(ary.listeOfValue[i].value.integer == 0){
-                    printf("false");
-                }else{
-                    printf("Boolean error");
-                }
-            }
-            break;
-            case JSON_DECIMAL:
-                fprintfDouble(stdout,ary.listeOfValue[i].value.decimal);
-            break;
-            case JSON_ERROR:
-                printf("ERROR");
-            break;
-            case JSON_EXPONENTIAL:{
-                if(ary.listeOfValue[i].value.string == NULL){
-                    printf("null");
-                }else{
-                    printf("%s",ary.listeOfValue[i].value.string);
-                }
-            }
-            break;
-            case JSON_NULL:
-                printf("null");
-            break;
-            case JSON_NUMBER:
-                printf("%lld",ary.listeOfValue[i].value.integer);
-            break;
-            case JSON_STRING:{
-                if(ary.listeOfValue[i].value.string == NULL){
-                    printf("null");
-                }else{
-                    printf("\"%s\"",ary.listeOfValue[i].value.string);
-                }
-            }
-            break;
-            default:
-                printf("Error print");
-        }
-        if(i < ary.nbOfElement - 1) {
-            printf(",");
-        }
-    }
-    printf("]");
-}
 
-void printfObject(int* depth,JsonObject obj){
-    size_t numberOfOBJ = (size_t)obj.nbOfElement;
-    printf("{\n");
-
-    if(obj.nbOfElement == 0) {
-        printfXtab(*depth);
-        printf("}");
-        return;
-    }
-    (*depth)++;
-    for(size_t i=0;i<numberOfOBJ;i++){
-        
-        printfXtab(*depth);
-        printf("\"%s\": ", obj.listeOfPair[i].key);
-        switch(obj.listeOfPair[i].value.type){
-            case JSON_OBJECT:
-                printfObject(depth, *obj.listeOfPair[i].value.value.object);
-            break;
-            case JSON_ARRAY:
-                printfArray(depth, *obj.listeOfPair[i].value.value.array);
-            break;
-            case JSON_BOOL:{
-                if(obj.listeOfPair[i].value.value.integer == 1){
-                    printf("true");
-                }else if(obj.listeOfPair[i].value.value.integer == 0){
-                    printf("false");
-                }else{
-                    printf("Boolean error");
-                }
-            }
-            break;
-            case JSON_DECIMAL:
-                fprintfDouble(stdout,obj.listeOfPair[i].value.value.decimal);
-            break;
-            case JSON_ERROR:
-                printf("ERROR");
-            break;
-            case JSON_EXPONENTIAL:{
-                if(obj.listeOfPair[i].value.value.string == NULL){
-                    printf("null");
-                }else{
-                    printf("%s",obj.listeOfPair[i].value.value.string);
-                }
-            }
-            break;
-            case JSON_NULL:
-                printf("null");
-            break;
-            case JSON_NUMBER:
-                printf("%lld",obj.listeOfPair[i].value.value.integer);
-            break;
-            case JSON_STRING:{
-                if(obj.listeOfPair[i].value.value.string == NULL){
-                    printf("null");
-                }else{
-                    printf("\"%s\"",obj.listeOfPair[i].value.value.string);
-                }
-            }
-            break;
-            default:
-                printf("Error reading");
-        }
-        if(i < obj.nbOfElement - 1) {
-            printf(",");
-        }
-        printf("\n");
-    }
-    (*depth)--;
-
-    printfXtab(*depth);
-    printf("}\n");
-
-}
 
 //////////////////////////////////////////// fprintf function ////////////////////////////////////////////
 
@@ -512,20 +325,19 @@ int fprintfValue(FILE* file, JsonValue value){
             break;
         }
         default:
-            fprintf(file,"error print");
+            fprintf(file,"\"error : unknown type\"");
     }
     return 0;
 }
 
 void fprintfObject(FILE* file, int* depth, JsonObject obj){
     size_t numberOfOBJ = (size_t)obj.nbOfElement;
-    fprintf(file,"{\n");
-
+    // Objet vide : "{}" sur une seule ligne, comme le tableau vide "[]"
     if(obj.nbOfElement == 0) {
-        fprintfXtab(file,*depth);
-        fprintf(file,"}");
+        fprintf(file,"{}");
         return;
     }
+    fprintf(file,"{\n");
     (*depth)++;
     for(size_t i=0;i<numberOfOBJ;i++){
         
@@ -581,7 +393,7 @@ void fprintfObject(FILE* file, int* depth, JsonObject obj){
             }
             break;
             default:
-                fprintf(file,"Error reading");
+                fprintf(file,"\"error : unknown type\"");
         }
         if(i < obj.nbOfElement - 1) {
             fprintf(file,",");
@@ -591,7 +403,7 @@ void fprintfObject(FILE* file, int* depth, JsonObject obj){
     (*depth)--;
 
     fprintfXtab(file,*depth);
-    fprintf(file,"}\n");
+    fprintf(file,"}");   // pas de \n : c'est le parent qui écrit la ',' puis le retour à la ligne
 }
 
 void fprintfArray(FILE* file, int* depth, JsonArray ary){
@@ -652,7 +464,7 @@ void fprintfArray(FILE* file, int* depth, JsonArray ary){
             }
             break;
             default:
-                fprintf(file,"Error print");
+                fprintf(file,"\"error : unknown type\"");
         }
         if(i < ary.nbOfElement - 1) {
             fprintf(file,",");
@@ -1293,7 +1105,7 @@ JsonValue parseOBJ(char* json_str, size_t* position){
         state = _strcpy(&buffeur_pair.key, buffeur_value.value.string);
         for(int i=0;i<NumberOfElement;i++){
             if(_strcmp(buffeur_pair.key,obj_value.value.object->listeOfPair[i].key) == 0){
-                printf("Error : Duplicate key \"%s\"\n",buffeur_pair.key);
+                fprintf(stderr, "Error : duplicate key \"%s\"\n", buffeur_pair.key);
                 free(buffeur_pair.key);
                 freeValue(buffeur_value);
                 obj_value.value.object->nbOfElement = NumberOfElement;
@@ -1940,7 +1752,7 @@ void freeArray(JsonArray *ary){
 
 int cpyValue(JsonValue* dest,JsonValue* src){
     if(dest == NULL ||src == NULL){
-        printf("Erreur : copy of a array impossible -> dest or src is null");
+        fprintf(stderr, "Error : cannot copy the value (dest or src is NULL)\n");
         return 1;
     }
     int state;
@@ -1968,7 +1780,7 @@ int cpyValue(JsonValue* dest,JsonValue* src){
             dest->value.string = NULL;
             state = _strcpy(&dest->value.string,src->value.string);
             if(state){
-                printf("Error : copy of value (String) had a problem...\n");
+                fprintf(stderr, "Error : copy of a string failed\n");
                 free(dest->value.string);
                 return 1;
             }
@@ -1976,7 +1788,7 @@ int cpyValue(JsonValue* dest,JsonValue* src){
         case JSON_ARRAY :
             dest->value.array = (JsonArray*)malloc(sizeof(JsonArray));
             if(dest->value.array == NULL){
-                printf("Error : malloc error during the copy of a JSON_ARRAY Allocation...\n");
+                fprintf(stderr, "Error : allocation failed while copying an array\n");
                 return 1;
             }
             dest->value.array->nbOfElement = 0;
@@ -1984,7 +1796,7 @@ int cpyValue(JsonValue* dest,JsonValue* src){
 
             state = cpyArray(dest->value.array,src->value.array);
             if(state){
-                printf("Error : copy of value (Array) had a problem...\n");
+                fprintf(stderr, "Error : copy of an array failed\n");
                 free(dest->value.array);
                 *dest = initJsonValue(JSON_ERROR);
                 dest->value.string = "copy failed";
@@ -1994,7 +1806,7 @@ int cpyValue(JsonValue* dest,JsonValue* src){
         case JSON_OBJECT :
             dest->value.object = (JsonObject*)malloc(sizeof(JsonObject));
             if(dest->value.object == NULL){
-                printf("Error : malloc error during the copy of a JSON_OBJECT Allocation...\n");
+                fprintf(stderr, "Error : allocation failed while copying an object\n");
                 return 1;
             }
             dest->value.object->nbOfElement = 0;
@@ -2002,7 +1814,7 @@ int cpyValue(JsonValue* dest,JsonValue* src){
 
             state = cpyObject(dest->value.object,src->value.object);
             if(state){
-                printf("Error : copy of value (Object) had a problem...\n");
+                fprintf(stderr, "Error : copy of an object failed\n");
                 free(dest->value.object);
                 *dest = initJsonValue(JSON_ERROR);
                 dest->value.string = "copy failed";
@@ -2016,7 +1828,7 @@ int cpyValue(JsonValue* dest,JsonValue* src){
             dest->value.string = NULL;
             state = _strcpy(&dest->value.string,src->value.string);
             if(state){
-                printf("Error : copy of value (Exponential) had a problem...\n");
+                fprintf(stderr, "Error : copy of an exponential number failed\n");
                 free(dest->value.string);
                 return 1;
             }
@@ -2025,14 +1837,14 @@ int cpyValue(JsonValue* dest,JsonValue* src){
             dest->value.string = src->value.string;   // message constant : on copie juste le pointeur
         break;
         default :
-            printf("Error : unknow type...\n");
+            fprintf(stderr, "Error : unknown type\n");
     }
     return 0;
 }
 
 int cpyObject(JsonObject* dest,JsonObject* src){
     if(dest == NULL ||src == NULL){
-        printf("Erreur : copy of a array impossible -> dest or src is null");
+        fprintf(stderr, "Error : cannot copy the object (dest or src is NULL)\n");
         return 1;
     }
     if(dest == src){
@@ -2043,7 +1855,7 @@ int cpyObject(JsonObject* dest,JsonObject* src){
     if(dest->listeOfPair == NULL){
         dest->listeOfPair = (JsonPair*)calloc(src->nbOfElement, sizeof(JsonPair));
         if(dest->listeOfPair == NULL && src->nbOfElement > 0){
-            printf("Erreur : something went wrong during the allocation for an object");
+            fprintf(stderr, "Error : allocation failed while copying an object\n");
             return 1;
         }
     }else{
@@ -2065,7 +1877,7 @@ int cpyObject(JsonObject* dest,JsonObject* src){
     for(int i=0;i<dest->nbOfElement;i++){
         state = _strcpy(&dest->listeOfPair[i].key,src->listeOfPair[i].key);
         if(state){
-            printf("Error : copy of key from the object %s had a problem...\n",src->listeOfPair[i].key);
+            fprintf(stderr, "Error : copy of the key \"%s\" failed\n", src->listeOfPair[i].key);
             for(int j = 0; j < i; j++){
                 free(dest->listeOfPair[j].key);
                 freeValue(dest->listeOfPair[j].value);
@@ -2079,7 +1891,7 @@ int cpyObject(JsonObject* dest,JsonObject* src){
 
         state = cpyValue(&dest->listeOfPair[i].value,&src->listeOfPair[i].value);
         if(state){
-            printf("Error : copy of the value from the object %s had a problem...\n",src->listeOfPair[i].key);
+            fprintf(stderr, "Error : copy of the value of the key \"%s\" failed\n", src->listeOfPair[i].key);
             free(dest->listeOfPair[i].key);
             for(int j = 0; j < i; j++){
                 free(dest->listeOfPair[j].key);
@@ -2097,7 +1909,7 @@ int cpyObject(JsonObject* dest,JsonObject* src){
 
 int cpyArray(JsonArray* dest,JsonArray* src){
     if(dest == NULL ||src == NULL){
-        printf("Erreur : copy of a array impossible -> dest or src is null");
+        fprintf(stderr, "Error : cannot copy the array (dest or src is NULL)\n");
         return 1;
     }
     if(dest == src){
@@ -2117,7 +1929,7 @@ int cpyArray(JsonArray* dest,JsonArray* src){
 
     dest->listeOfValue = (JsonValue*)calloc(src->nbOfElement,sizeof(JsonValue));
     if(dest->listeOfValue == NULL && src->nbOfElement > 0){
-        printf("Erreur : something went wrong during the allocation for a array");
+        fprintf(stderr, "Error : allocation failed while copying an array\n");
         return 1;
     }
 
@@ -2125,7 +1937,7 @@ int cpyArray(JsonArray* dest,JsonArray* src){
     for(int i=0; i < src->nbOfElement; i++){
         state = cpyValue(&dest->listeOfValue[i],&src->listeOfValue[i]);
         if(state){
-            printf("Erreur : copy of an array had a error...");
+            fprintf(stderr, "Error : copy of an array element failed\n");
             for(int j = 0; j < i; j++){
                 freeValue(dest->listeOfValue[j]);
             }
