@@ -123,7 +123,7 @@ void fprintfArray(FILE* file, int* depth, JsonArray ary);
 size_t _strlen(char* str);
 int _strcmp(char* str1,char* str2);
 int _strchr(char* str,char c);
-int _strcpybxy(char **dest, char *src, int x, int y);
+int _strcpybxy(char **dest, char *src, size_t x, size_t y);
 int _strchrxt(char * str,char x,int avoid);
 int _strcpy(char** dest,char* src);
 int _strtod(char* str,double *res);
@@ -1068,7 +1068,7 @@ JsonValue parseOBJ(char* json_str, size_t* position){
     JsonValue buffeur_value;
     buffeur_value.value.string = NULL;
 
-    int NumberOfElement = 0;
+    size_t NumberOfElement = 0;
     size_t index;
     for(index = *position+1; json_str[index] != '\0';){
         if(json_str[index] == '}'){
@@ -1103,7 +1103,7 @@ JsonValue parseOBJ(char* json_str, size_t* position){
         }
         buffeur_pair.key = NULL;
         state = _strcpy(&buffeur_pair.key, buffeur_value.value.string);
-        for(int i=0;i<NumberOfElement;i++){
+        for(size_t i=0;i<NumberOfElement;i++){
             if(_strcmp(buffeur_pair.key,obj_value.value.object->listeOfPair[i].key) == 0){
                 fprintf(stderr, "Error : duplicate key \"%s\"\n", buffeur_pair.key);
                 free(buffeur_pair.key);
@@ -1229,7 +1229,7 @@ JsonValue parseARRAY(char* json_str, size_t* position){
     JsonType targeted_type;
     JsonValue buffeur;
 
-    int NumberOfElement = 0;
+    size_t NumberOfElement = 0;
     size_t index;
     for( index = *position+1; json_str[index] != '\0';){
         if(json_str[index] == ']'){
@@ -1366,7 +1366,7 @@ JsonValue parseSTRING(char* json_str,size_t* position){
             return str_value;
         };
     }else if(end > start) {
-        if(_strcpybxy(&str_value.value.string, json_str, (int)start+1, (int)end-1)){
+        if(_strcpybxy(&str_value.value.string, json_str, start + 1, end - 1)){
             str_value.type = JSON_ERROR;
             str_value.value.string = "out of memory";
             return str_value;
@@ -1517,6 +1517,9 @@ JsonValue parseBOOL(char* json_str, size_t* position){
     while(json_str[indexEnd] != '\0' && json_str[indexEnd] != ',' && json_str[indexEnd] != '}' && json_str[indexEnd] != ']'){
         indexEnd++;
     }
+    if(indexEnd == *position){
+        return boo_value;   // rien avant le délimiteur (sinon indexEnd - 1 passerait sous 0)
+    }
 
     char* buffer = (char*)calloc(indexEnd - (*position) + 1, sizeof(char));
     if(buffer == NULL){
@@ -1524,7 +1527,7 @@ JsonValue parseBOOL(char* json_str, size_t* position){
         return boo_value;
     }
     
-    int state = _strcpybxy(&buffer, json_str, (int)*position, (int)(indexEnd - 1));
+    int state = _strcpybxy(&buffer, json_str, *position, indexEnd - 1);
     if(state == 1){
         boo_value.value.string = "out of memory";
         free(buffer);
@@ -1564,7 +1567,7 @@ JsonValue parseNULL(char* json_str,size_t* position){
         null_value.value.string = "out of memory";
         return null_value;
     }
-    state = _strcpybxy(&buffer,json_str,(int)*position,indexEnd-1);
+    state = _strcpybxy(&buffer, json_str, *position, indexEnd - 1);
     if(state == 1){
         null_value.value.string = "out of memory";
         *position = indexEnd;
@@ -1687,7 +1690,7 @@ void freeObject(JsonObject *obj){
     if(obj == NULL){
         return;
     }
-    for(int i=0;i<obj->nbOfElement;i++){
+    for(size_t i=0;i<obj->nbOfElement;i++){
         free(obj->listeOfPair[i].key);
         switch(obj->listeOfPair[i].value.type){
             case JSON_BOOL:
@@ -1720,7 +1723,7 @@ void freeArray(JsonArray *ary){
     if(ary == NULL){
         return;
     }
-    for(int i = 0; i < ary->nbOfElement; i++){
+    for(size_t i = 0; i < ary->nbOfElement; i++){
         switch(ary->listeOfValue[i].type){
             case JSON_BOOL:
             case JSON_DECIMAL:
@@ -1860,7 +1863,7 @@ int cpyObject(JsonObject* dest,JsonObject* src){
         }
     }else{
         if(dest->listeOfPair != NULL){
-            for(int i = 0; i < dest->nbOfElement; i++){
+            for(size_t i = 0; i < dest->nbOfElement; i++){
                 free(dest->listeOfPair[i].key);
                 freeValue(dest->listeOfPair[i].value);
             }
@@ -1874,11 +1877,11 @@ int cpyObject(JsonObject* dest,JsonObject* src){
     }
 
     dest->nbOfElement = src->nbOfElement;
-    for(int i=0;i<dest->nbOfElement;i++){
+    for(size_t i=0;i<dest->nbOfElement;i++){
         state = _strcpy(&dest->listeOfPair[i].key,src->listeOfPair[i].key);
         if(state){
             fprintf(stderr, "Error : copy of the key \"%s\" failed\n", src->listeOfPair[i].key);
-            for(int j = 0; j < i; j++){
+            for(size_t j = 0; j < i; j++){
                 free(dest->listeOfPair[j].key);
                 freeValue(dest->listeOfPair[j].value);
                 
@@ -1893,7 +1896,7 @@ int cpyObject(JsonObject* dest,JsonObject* src){
         if(state){
             fprintf(stderr, "Error : copy of the value of the key \"%s\" failed\n", src->listeOfPair[i].key);
             free(dest->listeOfPair[i].key);
-            for(int j = 0; j < i; j++){
+            for(size_t j = 0; j < i; j++){
                 free(dest->listeOfPair[j].key);
                 freeValue(dest->listeOfPair[j].value);
                 dest->nbOfElement = 0;
@@ -1919,7 +1922,7 @@ int cpyArray(JsonArray* dest,JsonArray* src){
 
     // dest contient déjà des valeurs -> on les libère, sa liste peut être plus petite que src
     if(dest->listeOfValue != NULL){
-        for(int i = 0; i < dest->nbOfElement; i++){
+        for(size_t i = 0; i < dest->nbOfElement; i++){
             freeValue(dest->listeOfValue[i]);
         }
         free(dest->listeOfValue);
@@ -1934,11 +1937,11 @@ int cpyArray(JsonArray* dest,JsonArray* src){
     }
 
     dest->nbOfElement = src->nbOfElement;
-    for(int i=0; i < src->nbOfElement; i++){
+    for(size_t i=0; i < src->nbOfElement; i++){
         state = cpyValue(&dest->listeOfValue[i],&src->listeOfValue[i]);
         if(state){
             fprintf(stderr, "Error : copy of an array element failed\n");
-            for(int j = 0; j < i; j++){
+            for(size_t j = 0; j < i; j++){
                 freeValue(dest->listeOfValue[j]);
             }
             // On laisse dest vide et cohérent (sinon double free au prochain freeArray)
@@ -2171,12 +2174,12 @@ int _strchr(char* str, char c){
 }
 
 // String copy between x and y
-int _strcpybxy(char **dest, char *src, int x, int y){
+int _strcpybxy(char **dest, char *src, size_t x, size_t y){
     if(src == NULL){
         return 1;
     }
 
-    if (x < 0 || y < x) {
+    if (y < x) {   // size_t ne peut pas être négatif : seul ce cas est impossible
         return 1;
     }
 
@@ -2190,8 +2193,8 @@ int _strcpybxy(char **dest, char *src, int x, int y){
         return 1;
     }
 
-    int index = 0;
-    for (int i = x; i <= y; i++) {
+    size_t index = 0;
+    for (size_t i = x; i <= y; i++) {
         (*dest)[index] = src[i];
         index++;
     }
@@ -2280,8 +2283,8 @@ int _strtoi(char* str,long long int* res){
     }
     long long int result = 0;
     int boolNeg = 0;
-    int i = 0;
-    int len = (int)_strlen(str);
+    size_t i = 0;
+    size_t len = _strlen(str);
     if(len == 0) {
         return 1;
     }
