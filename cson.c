@@ -423,7 +423,11 @@ char localeDecimalPoint(void){
 }
 
 void fprintfDouble(FILE* file, double d){
-    char buffer[BUFFER_DEFAULT_SIZE];   // au plus BUFFER_DEFAULT_SIZE - 1 caractères + '\0', comme à la lecture
+    char buffer[BUFFER_DEFAULT_SIZE];
+    if(d-d != 0.0){
+        fprintf(file, "\"Error : NaN or infinity is not allowed\"");
+        return;
+    }
     char point = localeDecimalPoint();
     double check;
     int found = 0;
@@ -467,7 +471,7 @@ int fprintfValue(FILE* file, JsonValue value){
             }else if(value.value.integer == 0){
                 fprintf(file,"false");
             }else{
-                fprintf(file,"Boolean error");
+                fprintf(file,"\"Boolean error\"");
             }
             break;
         }
@@ -476,7 +480,11 @@ int fprintfValue(FILE* file, JsonValue value){
             fprintfDouble(file,value.value.decimal);
         break;
         case JSON_ERROR:
-            fprintf(file,"ERROR");
+            if(value.value.string == NULL){
+                fprintf(file,"\"error...\"");
+            }else{
+                fprintf(file, "\"error : %s\"", value.value.string);
+            }
         break;
         case JSON_EXPONENTIAL:
             if(value.value.string == NULL){
@@ -536,7 +544,7 @@ void fprintfObject(FILE* file, int* depth, JsonObject obj){
                 }else if(obj.listeOfPair[i].value.value.integer == 0){
                     fprintf(file,"false");
                 }else{
-                    fprintf(file,"Boolean error");
+                    fprintf(file,"\"Boolean error\"");
                 }
             }
             break;
@@ -544,7 +552,11 @@ void fprintfObject(FILE* file, int* depth, JsonObject obj){
                 fprintfDouble(file,obj.listeOfPair[i].value.value.decimal);
             break;
             case JSON_ERROR:
-                fprintf(file,"ERROR");
+                if(obj.listeOfPair[i].value.value.string == NULL){
+                    fprintf(file,"\"error...\"");
+                }else{
+                    fprintf(file, "\"error : %s\"", obj.listeOfPair[i].value.value.string);
+                }
             break;
             case JSON_EXPONENTIAL:{
                 if(obj.listeOfPair[i].value.value.string == NULL){
@@ -603,7 +615,7 @@ void fprintfArray(FILE* file, int* depth, JsonArray ary){
                 }else if(ary.listeOfValue[i].value.integer == 0){
                     fprintf(file,"false");
                 }else{
-                    fprintf(file,"Boolean error");
+                    fprintf(file,"\"Boolean error\"");
                 }
             }
             break;
@@ -611,7 +623,11 @@ void fprintfArray(FILE* file, int* depth, JsonArray ary){
                 fprintfDouble(file,ary.listeOfValue[i].value.decimal);
             break;
             case JSON_ERROR:
-                fprintf(file,"ERROR");
+                if(ary.listeOfValue[i].value.string == NULL){
+                    fprintf(file,"\"error...\"");
+                }else{
+                    fprintf(file, "\"error : %s\"", ary.listeOfValue[i].value.string);
+                }
             break;
             case JSON_EXPONENTIAL:{
                 if(ary.listeOfValue[i].value.string == NULL){
@@ -738,6 +754,12 @@ int newJsonNumber(JsonValue* dest,long long int _int){
 
 int newJsonDecimal(JsonValue* dest,double _dec){
     if(dest == NULL){
+        return 1;
+    }
+
+    if(_dec - _dec != 0.0){
+        *dest = initJsonValue(JSON_ERROR);
+        dest->value.string = "NaN or infinity is not allowed";
         return 1;
     }
     
@@ -2404,6 +2426,39 @@ int _strcpy(char** dest,char* src){
         (*dest)[i] = src[i];
     }
     (*dest)[size-1] = '\0';
+    return 0;
+}
+
+int _strcat(char** dest,char* str1,char* str2){
+    if(dest == NULL || str1 == NULL || str2 == NULL){
+        return 1;
+    }
+    size_t str1_len = _strlen(str1);
+    size_t str2_len = _strlen(str2);
+
+    if(str1_len == (size_t)-1 || str2_len == (size_t)-1){
+        return 1;
+    }
+
+    char *tmp = malloc(str1_len + str2_len + 1);
+    if(tmp == NULL){
+        return 1;
+    }
+
+    size_t index = 0;
+    for(size_t i=0;i<str1_len;i++){
+        tmp[index] = str1[i];
+        index++;
+    }
+    for(size_t i=0;i<str2_len;i++){
+        tmp[index] = str2[i];
+        index++;
+    }
+    tmp[index] = '\0';
+    
+    free(*dest);
+    *dest = tmp;
+
     return 0;
 }
 
