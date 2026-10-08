@@ -138,6 +138,7 @@ void debug(char* str);
 
 JsonValue initCson(char* path){
     JsonValue json = initJsonValue(JSON_ERROR);
+    int state;
 
     FILE* file = fopen(path, "rb");
     if(file == NULL){
@@ -146,26 +147,40 @@ JsonValue initCson(char* path){
     }
 
     char* json_str = NULL;
-    if(loadJson(&json_str, file) != 0) {
+    state = loadJson(&json_str, file);
+    if(state == 1) {
         printf("Error : impossible to load the JSON file (to big?)\n");
+        fclose(file);
+        free(json_str);
+        return json;
+    }else if(state == 2){
+        printf("Error : the JSon file contain NUL byte(s)\n");
         fclose(file);
         free(json_str);
         return json;
     }
     fclose(file);
-
+    
     size_t size = _strlen(json_str);
     if(size == (size_t)-1){
         printf("Error : a problem as occure during the calculation of the size\n");
         return json;
     }
 
+    char* start;
+    if((unsigned char)json_str[0] == 0xEF && (unsigned char)json_str[1] == 0xBB && (unsigned char)json_str[2] == 0xBF){
+        start = json_str + 3;
+    }else{
+        start = json_str;
+    }
+    size = _strlen(start);   // sans les 3 octets du BOM s'il y en avait un
+
     size_t errorPosition = 0;
-    if(validateJson(json_str, size, &errorPosition) != 0){
+    if(validateJson(start, size, &errorPosition) != 0){
         size_t line = 1;
         size_t column = 1;
         for(size_t i = 0; i < errorPosition; i++){
-            if(json_str[i] == '\n'){
+            if(start[i] == '\n'){
                 line++;
                 column = 1;
             }else{
@@ -177,12 +192,12 @@ JsonValue initCson(char* path){
         return json;
     }
 
-    whitespaceCleaner(json_str, &json_str);
+    whitespaceCleaner(start, &start);
 
     size_t pos = 0;
-    json = parseValue(json_str, &pos);
+    json = parseValue(start, &pos);
 
-    free(json_str);
+    free(json_str);   // start n'est qu'une façon de lire ce bloc : un seul free
     return json;
 }
 
@@ -1880,6 +1895,7 @@ int cpyValue(JsonValue* dest,JsonValue* src){
             }else{
                 dest->type = JSON_ERROR;
                 dest->value.integer = 0;
+                return 1;
             }
         break;
         case JSON_NUMBER:
@@ -2086,6 +2102,9 @@ int loadJson(char** dest,FILE* file){
         return 1;
     }
     (*dest)[size] = '\0';
+    if((long)_strlen(*dest) < size){
+        return 2;
+    }
     return 0;
 }
 
@@ -2161,7 +2180,16 @@ JsonType getType(char* json_str,size_t position){
             return JSON_OBJECT;
         break;
                 case '-':
-        case '0' ... '9' : {
+        case '0':
+        case '1':
+        case '2':
+        case '3':
+        case '4':
+        case '5':
+        case '6':
+        case '7':
+        case '8':
+        case '9': {
             size_t index = position;
             int boolEXP = 0;
             int boolDEC = 0;
