@@ -276,7 +276,11 @@ int fprintfValue(FILE* file, JsonValue value){
     int depth = 0;
     switch(value.type){
         case JSON_ARRAY:
-            fprintfArray(file,&depth,*value.value.array);
+            if(value.value.array == NULL){
+                fprintf(file,"null");   // tableau jamais alloué (initJsonValue seul) : rien à lire
+            }else{
+                fprintfArray(file,&depth,*value.value.array);
+            }
         break;
         case JSON_BOOL:{
             if(value.value.integer == 1){
@@ -314,7 +318,11 @@ int fprintfValue(FILE* file, JsonValue value){
             fprintf(file,"%lld",value.value.integer);
         break;
         case JSON_OBJECT:
-            fprintfObject(file,&depth,*value.value.object);
+            if(value.value.object == NULL){
+                fprintf(file,"null");
+            }else{
+                fprintfObject(file,&depth,*value.value.object);
+            }
         break;
         case JSON_STRING:{
             if(value.value.string == NULL){
@@ -345,10 +353,18 @@ void fprintfObject(FILE* file, int* depth, JsonObject obj){
         fprintf(file,"\"%s\": ", obj.listeOfPair[i].key);
         switch(obj.listeOfPair[i].value.type){
             case JSON_OBJECT:
-                fprintfObject(file, depth, *obj.listeOfPair[i].value.value.object);
+                if(obj.listeOfPair[i].value.value.object == NULL){
+                    fprintf(file,"null");
+                }else{
+                    fprintfObject(file, depth, *obj.listeOfPair[i].value.value.object);
+                }
             break;
             case JSON_ARRAY:
-                fprintfArray(file, depth, *obj.listeOfPair[i].value.value.array);
+                if(obj.listeOfPair[i].value.value.array == NULL){
+                    fprintf(file,"null");
+                }else{
+                    fprintfArray(file, depth, *obj.listeOfPair[i].value.value.array);
+                }
             break;
             case JSON_BOOL:{
                 if(obj.listeOfPair[i].value.value.integer == 1){
@@ -416,10 +432,18 @@ void fprintfArray(FILE* file, int* depth, JsonArray ary){
     for(size_t i=0;i<numberOfElement;i++){
         switch(ary.listeOfValue[i].type){
             case JSON_OBJECT:
-                fprintfObject(file,depth,*ary.listeOfValue[i].value.object);
+                if(ary.listeOfValue[i].value.object == NULL){
+                    fprintf(file,"null");
+                }else{
+                    fprintfObject(file,depth,*ary.listeOfValue[i].value.object);
+                }
             break;
             case JSON_ARRAY:
-                fprintfArray(file,depth,*ary.listeOfValue[i].value.array);
+                if(ary.listeOfValue[i].value.array == NULL){
+                    fprintf(file,"null");
+                }else{
+                    fprintfArray(file,depth,*ary.listeOfValue[i].value.array);
+                }
             break;
             case JSON_BOOL:{
                 if(ary.listeOfValue[i].value.integer == 1){
@@ -1797,6 +1821,8 @@ int cpyValue(JsonValue* dest,JsonValue* src){
             dest->value.array = (JsonArray*)malloc(sizeof(JsonArray));
             if(dest->value.array == NULL){
                 fprintf(stderr, "Error : allocation failed while copying an array\n");
+                *dest = initJsonValue(JSON_ERROR);   // sinon dest resterait un array qui pointe sur NULL
+                dest->value.string = "out of memory";
                 return 1;
             }
             dest->value.array->nbOfElement = 0;
@@ -1815,6 +1841,8 @@ int cpyValue(JsonValue* dest,JsonValue* src){
             dest->value.object = (JsonObject*)malloc(sizeof(JsonObject));
             if(dest->value.object == NULL){
                 fprintf(stderr, "Error : allocation failed while copying an object\n");
+                *dest = initJsonValue(JSON_ERROR);   // sinon dest resterait un object qui pointe sur NULL
+                dest->value.string = "out of memory";
                 return 1;
             }
             dest->value.object->nbOfElement = 0;
