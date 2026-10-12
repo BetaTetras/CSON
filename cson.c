@@ -273,6 +273,9 @@ void fprintfDouble(FILE* file, double d){
 
 
 int fprintfValue(FILE* file, JsonValue value){
+    if(file == NULL){
+        return 1;
+    }
     int depth = 0;
     switch(value.type){
         case JSON_ARRAY:
@@ -334,6 +337,12 @@ int fprintfValue(FILE* file, JsonValue value){
         }
         default:
             fprintf(file,"\"error : unknown type\"");
+    }
+
+    // fprintf écrit d'abord dans un tampon en mémoire : fflush l'envoie maintenant (disque plein -> erreur ici),
+    // et ferror dit si une des écritures précédentes a échoué
+    if(fflush(file) != 0 || ferror(file)){
+        return 1;
     }
     return 0;
 }
@@ -1237,10 +1246,15 @@ JsonValue parseOBJ(char* json_str, size_t* position){
 
         // Le parseur de la valeur n'a pas avancé -> on abandonne l'objet
         if(index == before){
+            // On garde la vraie cause si l'enfant en a donné une ("duplicate key"...), lue avant le freeObject
+            char* cause = "invalid value in object";
+            if(buffeur_pair.value.type == JSON_ERROR && buffeur_pair.value.value.string != NULL){
+                cause = buffeur_pair.value.value.string;
+            }
             obj_value.value.object->nbOfElement = NumberOfElement;
             freeObject(obj_value.value.object);
             obj_value = initJsonValue(JSON_ERROR);
-            obj_value.value.string = "invalid value in object";
+            obj_value.value.string = cause;
             return obj_value;
         }
     }
@@ -1363,10 +1377,15 @@ JsonValue parseARRAY(char* json_str, size_t* position){
 
         // Le parseur n'a pas avancé -> sans ça on boucle à l'infini, on abandonne le tableau
         if(index == before){
+            // On garde la vraie cause si l'enfant en a donné une ("duplicate key"...), lue avant le freeArray
+            char* cause = "invalid value in array";
+            if(buffeur.type == JSON_ERROR && buffeur.value.string != NULL){
+                cause = buffeur.value.string;
+            }
             ary_value.value.array->nbOfElement = NumberOfElement;
             freeArray(ary_value.value.array);
             ary_value = initJsonValue(JSON_ERROR);
-            ary_value.value.string = "invalid value in array";
+            ary_value.value.string = cause;
             return ary_value;
         }
     }
@@ -2351,21 +2370,25 @@ int _strtoi(char* str,long long int* res){
     }
 
 
+    // On calcule en NÉGATIF : un long long va jusqu'à -9223372036854775808,
+    // mais seulement jusqu'à +9223372036854775807. Le minimum n'a pas d'équivalent positif.
     for(; i < len; i++){
         if(str[i] < '0' || str[i] > '9'){
             return 1; // caractère invalide
         }
         int digit = str[i] - '0';
-        if(result > (INT64_MAX - digit) / 10){
-            return 1; // trop grand pour un long long -> parseNUMBER le passera en double
+        if(result < (INT64_MIN + digit) / 10){
+            return 1; // result * 10 - digit passerait sous INT64_MIN -> parseNUMBER le gardera autrement
         }
-        result = result * 10 + digit;
-
+        result = result * 10 - digit;
     }
     if(boolNeg == 1){
-        *res = -result;
-    }else{
         *res = result;
+    }else{
+        if(result == INT64_MIN){
+            return 1; // +9223372036854775808 ne tient pas dans un long long
+        }
+        *res = -result;
     }
     return 0;
 }
