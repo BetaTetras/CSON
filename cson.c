@@ -611,7 +611,22 @@ int newJsonExponencial(JsonValue* dest,char* exp){
     if(dest == NULL){
         return 1;
     }
-    
+    if(exp == NULL){
+        *dest = initJsonValue(JSON_ERROR);
+        dest->value.string = "number text is NULL";
+        return 1;
+    }
+
+    // Le texte est écrit tel quel (sans guillemets) : il doit être un nombre JSON valide, et rien d'autre.
+    // validateNumber s'arrête à la fin du nombre : pos doit donc arriver au bout ("12abc" s'arrête sur 'a')
+    size_t len = _strlen(exp);
+    size_t pos = 0;
+    if(validateNumber(exp, len, &pos) != 0 || pos != len){
+        *dest = initJsonValue(JSON_ERROR);
+        dest->value.string = "invalid number";
+        return 1;
+    }
+
     *dest = initJsonValue(JSON_EXPONENTIAL);
     dest->value.string = NULL;
     int state;
@@ -756,7 +771,7 @@ int modifyObject(JsonObject* obj,JsonPair paire,size_t index){
         return 1;
     }
     size_t isFound = getIndexFromObject(obj,paire.key);
-    if(isFound == (size_t)-1){
+    if(isFound != (size_t)-1 && isFound != index){
         fprintf(stderr, "Error : a identical key was found when trying to modify a object (%s)\n",paire.key);
         return 1;
     }
@@ -1552,11 +1567,7 @@ JsonValue parseBOOL(char* json_str, size_t* position){
         return boo_value;   // rien avant le délimiteur (sinon indexEnd - 1 passerait sous 0)
     }
 
-    char* buffer = (char*)calloc(indexEnd - (*position) + 1, sizeof(char));
-    if(buffer == NULL){
-        boo_value.value.string = "out of memory";
-        return boo_value;
-    }
+    char* buffer = NULL;   // _strcpybxy alloue elle-même la bonne taille
     
     int state = _strcpybxy(&buffer, json_str, *position, indexEnd - 1);
     if(state == 1){
@@ -1593,11 +1604,7 @@ JsonValue parseNULL(char* json_str,size_t* position){
         return null_value;
     }
 
-    char* buffer =(char*)calloc(indexEnd-(*position)+1,sizeof(char));
-    if(buffer == NULL){
-        null_value.value.string = "out of memory";
-        return null_value;
-    }
+    char* buffer = NULL;   // _strcpybxy alloue elle-même la bonne taille
     state = _strcpybxy(&buffer, json_str, *position, indexEnd - 1);
     if(state == 1){
         null_value.value.string = "out of memory";
@@ -2219,19 +2226,22 @@ int _strcpybxy(char **dest, char *src, size_t x, size_t y){
         return 1;
     }
 
-    if (y < x) {   // size_t ne peut pas être négatif : seul ce cas est impossible
+    if (y < x) {
         return 1;
     }
 
     size_t size = y - x + 2;
+    // realloc dans tmp : s'il échoue, *dest garde l'ancien bloc (sinon il fuit)
+    char* tmp;
     if (*dest == NULL) {
-        *dest = malloc(size);
+        tmp = malloc(size);
     } else {
-        *dest = realloc(*dest, size);
+        tmp = realloc(*dest, size);
     }
-    if (*dest == NULL) {
+    if (tmp == NULL) {
         return 1;
     }
+    *dest = tmp;
 
     size_t index = 0;
     for (size_t i = x; i <= y; i++) {
@@ -2268,14 +2278,17 @@ int _strcpy(char** dest,char* src){
 
     size_t size = _strlen(src) + 1;
 
+    // realloc dans tmp : s'il échoue, *dest garde l'ancien bloc (sinon il fuit)
+    char* tmp;
     if (*dest == NULL) {
-        *dest = malloc(size);
+        tmp = malloc(size);
     } else {
-        *dest = realloc(*dest, size);
+        tmp = realloc(*dest, size);
     }
-    if (*dest == NULL) {
+    if (tmp == NULL) {
         return 1;
     }
+    *dest = tmp;
 
     for(size_t i = 0;i<size;i++){
         (*dest)[i] = src[i];
