@@ -2,137 +2,63 @@
 #include <stdint.h> 
 #include <stdlib.h>
 
+#include "cson.h"
+
 #define BUFFER_DEFAULT_SIZE 64
 #define DEBUG_VALUE 0
 #define JSON_MAX_DEPTH 512  // Profondeur max d'imbrication ({ et [) acceptée par la validation
 
-// Liste de type que peux prendre un JSON
-typedef enum {
-    JSON_NULL,          // NULL
-    JSON_BOOL,          // Integer (0 ou 1)
-    JSON_NUMBER,        // Integer
-    JSON_STRING,        // char*
-    JSON_ARRAY,         // JsonArray
-    JSON_OBJECT,        // JsonObject
-    JSON_DECIMAL,       // double
-    JSON_EXPONENTIAL,   // char*
-    JSON_ERROR          // erreur
-} JsonType;
-
-// Pré-déclaration
-typedef struct JsonArray JsonArray;
-typedef struct JsonObject JsonObject;
-
-// Représentation d'une valeur JSON qui peut étre l'une de ces valeur -> Paire valeur type
-typedef struct JsonValue{
-    union {
-        long long int integer; // ou Binaire
-        double decimal; // JSON ne fais pas la diff entre integer et decimal mais la je suis C
-        char* string;
-        JsonArray* array;   // On file des pointeur pour des soucis de place,
-        JsonObject* object; // vue qu'un pointeur c'est toujour 8 octet
-    } value;
-    JsonType type;
-}JsonValue;
-
-typedef struct JsonPair{
-    char* key;
-    JsonValue value;
-}JsonPair;
-
-typedef struct JsonArray{
-    size_t nbOfElement;
-    JsonValue * listeOfValue;
-}JsonArray;
-
-typedef struct JsonObject{
-    size_t nbOfElement;
-    JsonPair * listeOfPair;
-}JsonObject;
-
-typedef struct JsonRoot{
-    JsonValue root;
-}JsonRoot;
-
-// Initialisée la transcription Text -> JsonValue
-JsonValue initCson(char* path);
-JsonValue initJsonValue(JsonType type);
+// Les types et les fonctions publiques sont dans cson.h.
+// Tout ce qui suit est interne : "static" les rend invisibles en dehors de ce fichier.
 
 // Utils
-JsonType getType(char* json_str,size_t position);
-long getSize(FILE* file);
-int loadJson(char** dest,FILE* file);
-int whitespaceCleaner(char* src,char** dest);
-int isEscaped(char* str, size_t position) ;
+static JsonType getType(char* json_str,size_t position);
+static long getSize(FILE* file);
+static int loadJson(char** dest,FILE* file);
+static int whitespaceCleaner(char* src,char** dest);
+static int isEscaped(char* str, size_t position) ;
 
-// parsing
-JsonValue parseOBJ(char* json_str, size_t* position);
-JsonValue parseARRAY(char* json_str, size_t* position);
-JsonValue parseSTRING(char* json_str,size_t* position);
-JsonValue parseNUMBER(char* json_str,size_t* position);
-JsonValue parseBOOL(char* json_str,size_t* position);
-JsonValue parseNULL(char* json_str,size_t* position);
-JsonValue parseDECIMAL(char* json_str, size_t* position);
-JsonValue parseEXPONENTIAL(char* json_str,size_t* position);
-JsonValue parseValue(char* json_str,size_t* position);
+// parsing (suppose un texte déjà validé par validateJson)
+static JsonValue parseOBJ(char* json_str, size_t* position);
+static JsonValue parseARRAY(char* json_str, size_t* position);
+static JsonValue parseSTRING(char* json_str,size_t* position);
+static JsonValue parseNUMBER(char* json_str,size_t* position);
+static JsonValue parseBOOL(char* json_str,size_t* position);
+static JsonValue parseNULL(char* json_str,size_t* position);
+static JsonValue parseDECIMAL(char* json_str, size_t* position);
+static JsonValue parseEXPONENTIAL(char* json_str,size_t* position);
+static JsonValue parseValue(char* json_str,size_t* position);
 
 // validation (0 = valide, 1 = invalide)
-int validateJson(char* json_str, size_t size, size_t* errorPosition);
-int validateValue(char* json_str, size_t size, size_t* pos, int depth);
-int validateObject(char* json_str, size_t size, size_t* pos, int depth);
-int validateArray(char* json_str, size_t size, size_t* pos, int depth);
-int validateString(char* json_str, size_t size, size_t* pos);
-int validateUtf8Char(char* json_str, size_t size, size_t* pos);
-int validateNumber(char* json_str, size_t size, size_t* pos);
-int validateLiteral(char* json_str, size_t size, size_t* pos, char* literal);
-void skipWhitespace(char* json_str, size_t size, size_t* pos);
-int isDigitAt(char* json_str, size_t size, size_t pos);
-
-// modification
-int addToArray(JsonArray* ary, JsonValue value,size_t index);
-int addToObject(JsonObject* obj, char* key, JsonValue value,size_t index);
-int removeToObject(JsonObject* obj, size_t index);
-int removeToArray(JsonArray* ary, size_t index);
-int modifyObject(JsonObject* obj,JsonPair paire,size_t index);
-int modifyArray(JsonArray* ary,JsonValue value,size_t index);
-
-//gets
-JsonValue* getValueFromObject(JsonObject* obj,char* key);
-size_t getIndexFromObject(JsonObject* obj,char* key);
-
-// frees
-void freeValue(JsonValue value);
-void freeObject(JsonObject *obj);
-void freeArray(JsonArray *ary);
-
-//cpy
-int cpyValue(JsonValue* dest,JsonValue* src);
-int cpyObject(JsonObject* dest,JsonObject* src);
-int cpyArray(JsonArray* dest,JsonArray* src);
-
-// printf
-void printfValue(JsonValue value);
+static int validateJson(char* json_str, size_t size, size_t* errorPosition);
+static int validateValue(char* json_str, size_t size, size_t* pos, int depth);
+static int validateObject(char* json_str, size_t size, size_t* pos, int depth);
+static int validateArray(char* json_str, size_t size, size_t* pos, int depth);
+static int validateString(char* json_str, size_t size, size_t* pos);
+static int validateUtf8Char(char* json_str, size_t size, size_t* pos);
+static int validateNumber(char* json_str, size_t size, size_t* pos);
+static int validateLiteral(char* json_str, size_t size, size_t* pos, char* literal);
+static void skipWhitespace(char* json_str, size_t size, size_t* pos);
+static int isDigitAt(char* json_str, size_t size, size_t pos);
 
 // fprintf
-int fprintfValue(FILE* file,JsonValue value);
-char localeDecimalPoint(void);
-void fprintfDouble(FILE* file, double d);
-void fprintfObject(FILE* file, int* depth, JsonObject obj);
-void fprintfArray(FILE* file, int* depth, JsonArray ary);
+static void fprintfXtab(FILE* file, int x);
+static char localeDecimalPoint(void);
+static void fprintfDouble(FILE* file, double d);
+static void fprintfObject(FILE* file, int* depth, JsonObject obj);
+static void fprintfArray(FILE* file, int* depth, JsonArray ary);
 
 // _string.h
-size_t _strlen(char* str);
-int _strcmp(char* str1,char* str2);
-int _strchr(char* str,char c);
-int _strcpybxy(char **dest, char *src, size_t x, size_t y);
-int _strchrxt(char * str,char x,int avoid);
-int _strcpy(char** dest,char* src);
-int _strtod(char* str,double *res);
+static size_t _strlen(char* str);
+static int _strcmp(char* str1,char* str2);
+static int _strcpybxy(char **dest, char *src, size_t x, size_t y);
+static int _strcpy(char** dest,char* src);
+static int _strtod(char* str,double *res);
 
 // conversion to str to x
-int _strtoi(char* str,long long int* res);
+static int _strtoi(char* str,long long int* res);
 
-void debug(char* str);
+static void debug(char* str);
 
 JsonValue initCson(char* path){
     JsonValue json = initJsonValue(JSON_ERROR);
@@ -222,7 +148,7 @@ void printfValue(JsonValue value){
 
 //////////////////////////////////////////// fprintf function ////////////////////////////////////////////
 
-void fprintfXtab(FILE* file, int x){
+static void fprintfXtab(FILE* file, int x){
     for(int i=0;i<x;i++){
         fprintf(file,"  ");
     }
@@ -230,13 +156,13 @@ void fprintfXtab(FILE* file, int x){
 
 // Séparateur décimal de la locale actuelle : '.' par défaut, ',' si le programme a fait setlocale(LC_ALL, "fr_FR...")
 // On le demande à snprintf : il l'utilise pour écrire 0.5
-char localeDecimalPoint(void){
+static char localeDecimalPoint(void){
     char buffer[8];
     snprintf(buffer, sizeof(buffer), "%.1f", 0.5);
     return buffer[1];
 }
 
-void fprintfDouble(FILE* file, double d){
+static void fprintfDouble(FILE* file, double d){
     char buffer[BUFFER_DEFAULT_SIZE];
     if(d-d != 0.0){
         fprintf(file, "\"Error : NaN or infinity is not allowed\"");
@@ -348,7 +274,7 @@ int fprintfValue(FILE* file, JsonValue value){
     return 0;
 }
 
-void fprintfObject(FILE* file, int* depth, JsonObject obj){
+static void fprintfObject(FILE* file, int* depth, JsonObject obj){
     size_t numberOfOBJ = (size_t)obj.nbOfElement;
     // Objet vide : "{}" sur une seule ligne, comme le tableau vide "[]"
     if(obj.nbOfElement == 0) {
@@ -432,7 +358,7 @@ void fprintfObject(FILE* file, int* depth, JsonObject obj){
     fprintf(file,"}");   // pas de \n : c'est le parent qui écrit la ',' puis le retour à la ligne
 }
 
-void fprintfArray(FILE* file, int* depth, JsonArray ary){
+static void fprintfArray(FILE* file, int* depth, JsonArray ary){
     size_t numberOfElement = (size_t)ary.nbOfElement;
     fprintf(file,"[");
     if(ary.nbOfElement == 0) {
@@ -856,7 +782,7 @@ size_t getIndexFromObject(JsonObject* obj,char* key){
 // des lectures hors limites et des valeurs mal formées.
 // En cas d'erreur, *pos reste sur le caractère fautif.
 
-int validateJson(char* json_str, size_t size, size_t* errorPosition){
+static int validateJson(char* json_str, size_t size, size_t* errorPosition){
     size_t pos = 0;
     int state = 1;
 
@@ -878,7 +804,7 @@ int validateJson(char* json_str, size_t size, size_t* errorPosition){
     return state;
 }
 
-int validateValue(char* json_str, size_t size, size_t* pos, int depth){
+static int validateValue(char* json_str, size_t size, size_t* pos, int depth){
     if(*pos >= size){
         return 1;
     }
@@ -900,7 +826,7 @@ int validateValue(char* json_str, size_t size, size_t* pos, int depth){
     }
 }
 
-int validateObject(char* json_str, size_t size, size_t* pos, int depth){
+static int validateObject(char* json_str, size_t size, size_t* pos, int depth){
     if(depth > JSON_MAX_DEPTH){
         return 1;
     }
@@ -945,7 +871,7 @@ int validateObject(char* json_str, size_t size, size_t* pos, int depth){
     return 1; // pas de '}' fermante
 }
 
-int validateArray(char* json_str, size_t size, size_t* pos, int depth){
+static int validateArray(char* json_str, size_t size, size_t* pos, int depth){
     if(depth > JSON_MAX_DEPTH){
         return 1;
     }
@@ -978,7 +904,7 @@ int validateArray(char* json_str, size_t size, size_t* pos, int depth){
     return 1; // pas de ']' fermant
 }
 
-int validateString(char* json_str, size_t size, size_t* pos){
+static int validateString(char* json_str, size_t size, size_t* pos){
     (*pos)++; // '"' ouvrant
 
     while(*pos < size){
@@ -1036,7 +962,7 @@ int validateString(char* json_str, size_t size, size_t* pos){
 //   1er octet 0xE0-0xEF : 3 octets
 //   1er octet 0xF0-0xF4 : 4 octets      (0xF5-0xFF n'existent pas : au-delà du dernier caractère Unicode)
 // Les octets suivants sont toujours entre 0x80 et 0xBF, sauf 4 cas où le 2e octet a des bornes plus serrées.
-int validateUtf8Char(char* json_str, size_t size, size_t* pos){
+static int validateUtf8Char(char* json_str, size_t size, size_t* pos){
     unsigned char c = (unsigned char)json_str[*pos];
     size_t length;
     unsigned char min = 0x80;   // bornes du 2e octet
@@ -1079,7 +1005,7 @@ int validateUtf8Char(char* json_str, size_t size, size_t* pos){
     return 0;
 }
 
-int validateNumber(char* json_str, size_t size, size_t* pos){
+static int validateNumber(char* json_str, size_t size, size_t* pos){
     size_t start = *pos;
     if(*pos < size && json_str[*pos] == '-'){
         (*pos)++;
@@ -1131,7 +1057,7 @@ int validateNumber(char* json_str, size_t size, size_t* pos){
     return 0;
 }
 
-int validateLiteral(char* json_str, size_t size, size_t* pos, char* literal){
+static int validateLiteral(char* json_str, size_t size, size_t* pos, char* literal){
     for(size_t i = 0; literal[i] != '\0'; i++){
         if(*pos >= size || json_str[*pos] != literal[i]){
             return 1;
@@ -1141,20 +1067,20 @@ int validateLiteral(char* json_str, size_t size, size_t* pos, char* literal){
     return 0;
 }
 
-void skipWhitespace(char* json_str, size_t size, size_t* pos){
+static void skipWhitespace(char* json_str, size_t size, size_t* pos){
     while(*pos < size && (json_str[*pos] == ' ' || json_str[*pos] == '\n' ||
                           json_str[*pos] == '\t' || json_str[*pos] == '\r')){
         (*pos)++;
     }
 }
 
-int isDigitAt(char* json_str, size_t size, size_t pos){
+static int isDigitAt(char* json_str, size_t size, size_t pos){
     return pos < size && json_str[pos] >= '0' && json_str[pos] <= '9';
 }
 
 //////////////////////////////////////////// parse function ////////////////////////////////////////////
 
-JsonValue parseOBJ(char* json_str, size_t* position){
+static JsonValue parseOBJ(char* json_str, size_t* position){
     debug("parseOBJ");
     JsonValue obj_value = initJsonValue(JSON_ERROR);
     int state;
@@ -1322,7 +1248,7 @@ JsonValue parseOBJ(char* json_str, size_t* position){
     return obj_value;
 }
 
-JsonValue parseARRAY(char* json_str, size_t* position){
+static JsonValue parseARRAY(char* json_str, size_t* position){
     debug("parseARRAY");
     JsonValue ary_value = initJsonValue(JSON_ERROR);
 
@@ -1453,7 +1379,7 @@ JsonValue parseARRAY(char* json_str, size_t* position){
     return ary_value;
 }
 
-JsonValue parseSTRING(char* json_str,size_t* position){
+static JsonValue parseSTRING(char* json_str,size_t* position){
     debug("parseSTRING");
     JsonValue str_value = initJsonValue(JSON_ERROR);
     str_value.type = JSON_STRING;
@@ -1500,7 +1426,7 @@ JsonValue parseSTRING(char* json_str,size_t* position){
     return str_value;
 }
 
-JsonValue parseEXPONENTIAL(char* json_str,size_t* position){
+static JsonValue parseEXPONENTIAL(char* json_str,size_t* position){
     debug("parseEXPONENTIAL");
     JsonValue exp_value = initJsonValue(JSON_ERROR);
 
@@ -1573,7 +1499,7 @@ JsonValue parseEXPONENTIAL(char* json_str,size_t* position){
     return exp_value;
 }
 
-JsonValue parseNUMBER(char* json_str,size_t* position){
+static JsonValue parseNUMBER(char* json_str,size_t* position){
     debug("parseNUMBER");
     JsonValue nbr_value = initJsonValue(JSON_ERROR);
 
@@ -1626,7 +1552,7 @@ JsonValue parseNUMBER(char* json_str,size_t* position){
     return nbr_value;
 }
 
-JsonValue parseBOOL(char* json_str, size_t* position){
+static JsonValue parseBOOL(char* json_str, size_t* position){
     debug("parseBOOL");
     JsonValue boo_value = initJsonValue(JSON_ERROR);
     boo_value.value.string = "invalid boolean";   // remplacé si on trouve true ou false
@@ -1667,7 +1593,7 @@ JsonValue parseBOOL(char* json_str, size_t* position){
     return boo_value;
 }
 
-JsonValue parseNULL(char* json_str,size_t* position){
+static JsonValue parseNULL(char* json_str,size_t* position){
     JsonValue null_value = initJsonValue(JSON_ERROR);
     null_value.value.string = "invalid null";   // remplacé si on trouve null
     int state;
@@ -1698,7 +1624,7 @@ JsonValue parseNULL(char* json_str,size_t* position){
     return null_value;
 }
 
-JsonValue parseDECIMAL(char* json_str, size_t* position){
+static JsonValue parseDECIMAL(char* json_str, size_t* position){
     debug("parseDECIMAL");
     JsonValue dec_value = initJsonValue(JSON_ERROR);
 
@@ -1747,7 +1673,7 @@ JsonValue parseDECIMAL(char* json_str, size_t* position){
     return dec_value;
 }
 
-JsonValue parseValue(char* json_str, size_t* position) {
+static JsonValue parseValue(char* json_str, size_t* position) {
     debug("parseValue");
     JsonType type = getType(json_str, *position);
     
@@ -1873,7 +1799,7 @@ int cpyValue(JsonValue* dest,JsonValue* src){
         fprintf(stderr, "Error : cannot copy the value (dest or src is NULL)\n");
         return 1;
     }else if(dest == src){
-        fprintf(stderr, "Error : cannot copy the value (dest[%p] and src[%p] are the same pointer)\n",dest,src);
+        fprintf(stderr, "Error : cannot copy the value (dest[%p] and src[%p] are the same pointer)\n", (void*)dest, (void*)src);
         return 1;
     }
     int state;
@@ -1973,7 +1899,7 @@ int cpyObject(JsonObject* dest,JsonObject* src){
         return 1;
     }
     if(dest == src){
-        fprintf(stderr, "Error : cannot copy the object (dest[%p] and src[%p] are the same pointer)\n",dest,src);
+        fprintf(stderr, "Error : cannot copy the object (dest[%p] and src[%p] are the same pointer)\n", (void*)dest, (void*)src);
         return 1;
     }
     int state;
@@ -2039,7 +1965,7 @@ int cpyArray(JsonArray* dest,JsonArray* src){
         return 1;
     }
     if(dest == src){
-        fprintf(stderr, "Error : cannot copy the array (dest[%p] and src[%p] are the same pointer)\n",dest,src);
+        fprintf(stderr, "Error : cannot copy the array (dest[%p] and src[%p] are the same pointer)\n", (void*)dest, (void*)src);
         return 1;
     }
     int state;
@@ -2081,7 +2007,7 @@ int cpyArray(JsonArray* dest,JsonArray* src){
 
 //////////////////////////////////////////// treatment function ////////////////////////////////////////////
 
-int loadJson(char** dest,FILE* file){
+static int loadJson(char** dest,FILE* file){
     // Détermine la longeur du JSON
     long size = getSize(file); //Rewind -> Retour au debut
     if(size == -1){
@@ -2116,7 +2042,7 @@ int loadJson(char** dest,FILE* file){
 // Retire les espaces hors des strings en une seule passe.
 // dest peut pointer sur src (nettoyage sur place) : indexWrite <= i, on n'écrase jamais un char pas encore lu.
 // Si *dest est NULL, un buffer de _strlen(src)+1 octets est alloué (le résultat n'est jamais plus long que src).
-int whitespaceCleaner(char* src,char** dest){
+static int whitespaceCleaner(char* src,char** dest){
     size_t indexWrite = 0;
     int insideString = 0;
 
@@ -2163,7 +2089,7 @@ int whitespaceCleaner(char* src,char** dest){
     return 0;
 }
 
-JsonType getType(char* json_str,size_t position){
+static JsonType getType(char* json_str,size_t position){
     if(json_str == NULL){
         return JSON_ERROR;
     }
@@ -2230,14 +2156,14 @@ JsonType getType(char* json_str,size_t position){
     }
 }
 
-long getSize(FILE* file){
+static long getSize(FILE* file){
     fseek(file, 0, SEEK_END);
     long size = ftell(file);
     rewind(file);
     return size;
 }
 
-int isEscaped(char* str, size_t position) {
+static int isEscaped(char* str, size_t position) {
     size_t count = 0;
 
     while (position > 0 && str[position - 1] == '\\') {
@@ -2250,7 +2176,7 @@ int isEscaped(char* str, size_t position) {
 
 //////////////////////////////////////////// treatment function ////////////////////////////////////////////
 
-size_t _strlen(char* str){
+static size_t _strlen(char* str){
     if(str == NULL){
         return -1;
     }
@@ -2262,7 +2188,7 @@ size_t _strlen(char* str){
 }
 
 // 0 -> Same | 1 -> Not the same
-int _strcmp(char* str1,char* str2){
+static int _strcmp(char* str1,char* str2){
     if(str1 == NULL){
         if(str2 == NULL){
             return 0;
@@ -2284,21 +2210,8 @@ int _strcmp(char* str1,char* str2){
     return 0;
 }
 
-int _strchr(char* str, char c){
-    if(str == NULL){
-        return -1;
-    }
-    size_t len = _strlen(str);
-    for(size_t i = 0; i < len; i++){
-        if(str[i] == c){
-            return (int)i;
-        }
-    }
-    return -1;
-}
-
 // String copy between x and y
-int _strcpybxy(char **dest, char *src, size_t x, size_t y){
+static int _strcpybxy(char **dest, char *src, size_t x, size_t y){
     if(src == NULL){
         return 1;
     }
@@ -2330,25 +2243,7 @@ int _strcpybxy(char **dest, char *src, size_t x, size_t y){
     return 0;
 }
 
-// String reserch x time
-int _strchrxt(char * str,char x,int avoid){
-    if(str == NULL){
-        return -1;
-    }
-    int xTime = 0;
-    int size = (int)_strlen(str);
-    for(int i=0;i<size;i++){
-        if(str[i] == x && avoid == xTime){
-            return i;
-        }
-        if(str[i] == x) {
-            xTime++;
-        }
-    }   
-    return -1;
-}
-
-int _strcpy(char** dest,char* src){
+static int _strcpy(char** dest,char* src){
     if(src == NULL){
         return 1;
     }
@@ -2374,40 +2269,7 @@ int _strcpy(char** dest,char* src){
     return 0;
 }
 
-int _strcat(char** dest,char* str1,char* str2){
-    if(dest == NULL || str1 == NULL || str2 == NULL){
-        return 1;
-    }
-    size_t str1_len = _strlen(str1);
-    size_t str2_len = _strlen(str2);
-
-    if(str1_len == (size_t)-1 || str2_len == (size_t)-1){
-        return 1;
-    }
-
-    char *tmp = malloc(str1_len + str2_len + 1);
-    if(tmp == NULL){
-        return 1;
-    }
-
-    size_t index = 0;
-    for(size_t i=0;i<str1_len;i++){
-        tmp[index] = str1[i];
-        index++;
-    }
-    for(size_t i=0;i<str2_len;i++){
-        tmp[index] = str2[i];
-        index++;
-    }
-    tmp[index] = '\0';
-    
-    free(*dest);
-    *dest = tmp;
-
-    return 0;
-}
-
-int _strtoi(char* str,long long int* res){
+static int _strtoi(char* str,long long int* res){
     if(str == NULL){
         return 1;
     }
@@ -2451,7 +2313,7 @@ int _strtoi(char* str,long long int* res){
     return 0;
 }
 
-int _strtod(char* str,double *res){
+static int _strtod(char* str,double *res){
     if(str == NULL){
         return 1;
     }
@@ -2513,7 +2375,7 @@ int _strtod(char* str,double *res){
 
 ////////////////////////////////////////////////////
 
-void debug(char* str){
+static void debug(char* str){
 
     if(DEBUG_VALUE == 1){
         if(str == NULL){
