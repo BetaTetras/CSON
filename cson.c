@@ -82,6 +82,7 @@ int validateValue(char* json_str, size_t size, size_t* pos, int depth);
 int validateObject(char* json_str, size_t size, size_t* pos, int depth);
 int validateArray(char* json_str, size_t size, size_t* pos, int depth);
 int validateString(char* json_str, size_t size, size_t* pos);
+int validateUtf8Char(char* json_str, size_t size, size_t* pos);
 int validateNumber(char* json_str, size_t size, size_t* pos);
 int validateLiteral(char* json_str, size_t size, size_t* pos, char* literal);
 void skipWhitespace(char* json_str, size_t size, size_t* pos);
@@ -990,6 +991,13 @@ int validateString(char* json_str, size_t size, size_t* pos){
             // Tab, retour à la ligne... doivent être échappés (\t, \n) dans une string JSON
             return 1;
         }
+        if(c >= 0x80){
+            // Caractère non ASCII (é, €, 😀...) : ses octets doivent former de l'UTF-8 valide
+            if(validateUtf8Char(json_str, size, pos)){
+                return 1;
+            }
+            continue;   // *pos est déjà après le caractère
+        }
         if(c == '\\'){
             (*pos)++;
             if(*pos >= size){
@@ -1019,6 +1027,56 @@ int validateString(char* json_str, size_t size, size_t* pos){
         (*pos)++;
     }
     return 1; // pas de '"' fermant
+}
+
+// Vérifie qu'à *pos commence un caractère UTF-8 valide (RFC 3629), et avance juste après lui.
+// 0 = valide, 1 = invalide (*pos reste sur l'octet fautif, pour le message ligne/colonne).
+//   1er octet 0x00-0x7F : 1 octet (ASCII)
+//   1er octet 0xC2-0xDF : 2 octets      (0xC0 et 0xC1 n'existent pas : ce serait de l'ASCII écrit en trop long)
+//   1er octet 0xE0-0xEF : 3 octets
+//   1er octet 0xF0-0xF4 : 4 octets      (0xF5-0xFF n'existent pas : au-delà du dernier caractère Unicode)
+// Les octets suivants sont toujours entre 0x80 et 0xBF, sauf 4 cas où le 2e octet a des bornes plus serrées.
+int validateUtf8Char(char* json_str, size_t size, size_t* pos){
+    unsigned char c = (unsigned char)json_str[*pos];
+    size_t length;
+    unsigned char min = 0x80;   // bornes du 2e octet
+    unsigned char max = 0xBF;
+
+    if(c < 0x80){
+        length = 1;
+    }else if(c >= 0xC2 && c <= 0xDF){
+        length = 2;
+    }else if(c >= 0xE0 && c <= 0xEF){
+        length = 3;
+        if(c == 0xE0){
+            min = 0xA0;   // sinon : caractère écrit sur plus d'octets que nécessaire ("overlong")
+        }else if(c == 0xED){
+            max = 0x9F;   // sinon : U+D800-U+DFFF, réservés aux paires UTF-16, interdits en UTF-8
+        }
+    }else if(c >= 0xF0 && c <= 0xF4){
+        length = 4;
+        if(c == 0xF0){
+            min = 0x90;   // overlong
+        }else if(c == 0xF4){
+            max = 0x8F;   // sinon : au-delà de U+10FFFF, le dernier caractère Unicode
+        }
+    }else{
+        return 1;         // 0x80-0xC1 ou 0xF5-0xFF ne peuvent pas commencer un caractère
+    }
+
+    if(*pos + length > size){
+        return 1;         // caractère coupé par la fin du texte
+    }
+    for(size_t i = 1; i < length; i++){
+        unsigned char next = (unsigned char)json_str[*pos + i];
+        unsigned char low = (i == 1) ? min : 0x80;
+        unsigned char high = (i == 1) ? max : 0xBF;
+        if(next < low || next > high){
+            return 1;     // octet de suite manquant ou hors bornes
+        }
+    }
+    *pos += length;
+    return 0;
 }
 
 int validateNumber(char* json_str, size_t size, size_t* pos){
