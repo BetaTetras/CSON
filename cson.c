@@ -755,6 +755,11 @@ int modifyObject(JsonObject* obj,JsonPair paire,size_t index){
     if(obj == NULL || index >= obj->nbOfElement){
         return 1;
     }
+    size_t isFound = getIndexFromObject(obj,paire.key);
+    if(isFound == (size_t)-1){
+        fprintf(stderr, "Error : a identical key was found when trying to modify a object (%s)\n",paire.key);
+        return 1;
+    }
     size_t paireLen = _strlen(paire.key);
     if(paireLen == (size_t)-1){
         return 1;
