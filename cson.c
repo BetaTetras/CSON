@@ -544,6 +544,8 @@ int newJsonBool(JsonValue* dest,int _bool){
         return 1;
     }
     if(_bool > 1 || _bool < 0){
+        *dest = initJsonValue(JSON_ERROR);
+        dest->value.string = "an error occurred in the initialisation of a boolean value (!0 or 1)"; 
         return 1;
     }
     
@@ -1757,6 +1759,9 @@ int cpyValue(JsonValue* dest,JsonValue* src){
     if(dest == NULL ||src == NULL){
         fprintf(stderr, "Error : cannot copy the value (dest or src is NULL)\n");
         return 1;
+    }else if(dest == src){
+        fprintf(stderr, "Error : cannot copy the value (dest[%p] and src[%p] are the same pointer)\n",dest,src);
+        return 1;
     }
     int state;
 
@@ -1851,7 +1856,8 @@ int cpyObject(JsonObject* dest,JsonObject* src){
         return 1;
     }
     if(dest == src){
-        return 0;
+        fprintf(stderr, "Error : cannot copy the object (dest[%p] and src[%p] are the same pointer)\n",dest,src);
+        return 1;
     }
     int state;
 
@@ -1916,7 +1922,8 @@ int cpyArray(JsonArray* dest,JsonArray* src){
         return 1;
     }
     if(dest == src){
-        return 0;
+        fprintf(stderr, "Error : cannot copy the array (dest[%p] and src[%p] are the same pointer)\n",dest,src);
+        return 1;
     }
     int state;
 
