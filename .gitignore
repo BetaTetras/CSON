@@ -2,12 +2,6 @@
 *.o
 *.a
 *.so
-/exemple
-/tests/test_cson
-
-# Fichiers produits par l'exemple et les tests
-/sortie.json
-/tests/tmp_*.json
 
 # Ancien exécutable compilé à la main
 /cson

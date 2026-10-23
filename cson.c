@@ -216,6 +216,12 @@ int fprintfValue(FILE* file, JsonValue value){
     if(file == NULL){
         return 1;
     }
+    // Sans tampon : sinon stdio garde une copie du texte dans un bloc que fclose libère sans l'effacer.
+    // setvbuf n'est valable qu'avant toute autre opération sur le fichier (d'où : appeler juste après fopen).
+    // Pas pour stdout (printfValue) : ça changerait l'affichage de tout le programme.
+    if(file != stdout){
+        setvbuf(file, NULL, _IONBF, 0);
+    }
     int depth = 0;
     switch(value.type){
         case JSON_ARRAY:

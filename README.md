@@ -34,18 +34,14 @@
 | **Aucune dépendance** : seulement `stdio.h`, `stdlib.h` et `stdint.h`            | `v1`        |
 | **Gestion mémoire** complète, testée sous *valgrind* (aucune fuite)              | `v1`        |
 | **Messages d'erreur** explicites dans les `JSON_ERROR`                           | `v1`        |
-| **Tests automatiques** avec `make test`                                          | `v1`        |
 
 ## ⚙️ | Fonctionnement et déploiement
 ### Requis :
-- *Toute version* -  N'importe quel PC sous Linux (*gcc* et *make* conseillés, *valgrind* pour `make valgrind`)
+- *Toute version* -  N'importe quel PC sous Linux (*gcc* et *make* conseillés)
 
 ### Compilation :
 ```sh
 make            # construit la bibliothèque libcson.a
-make exemple    # construit ./exemple (lit test.json)
-make test       # lance les tests
-make valgrind   # lance les tests sous valgrind
 make clean      # supprime tout ce qui a été compilé
 ```
 
@@ -79,7 +75,7 @@ int main(void){
     return 0;
 }
 ```
-Un exemple plus complet (lecture, ajout, enregistrement) se trouve dans [`exemple.c`](exemple.c), et le détail de chaque fonction dans [`cson.h`](cson.h).
+Le détail de chaque fonction se trouve dans [`cson.h`](cson.h).
 
 ### Les types :
 Toute valeur est une `JsonValue` : un **type** et un **contenu**. Il faut toujours vérifier le type avant de lire le contenu.
@@ -111,7 +107,7 @@ Les fonctions qui renvoient un `int` renvoient **0 si tout va bien** et **1 en c
 - Le message d'un `JSON_ERROR` est un texte constant : il ne faut **jamais** le libérer.
 
 ## ⚠️ | À savoir
-- **Les strings sont gardées au format JSON**, échappements compris (`"a\nb"` reste `a`, `\`, `n`, `b`), et réécrites à l'identique. `newJsonString()`, `addToObject()` et `modifyObject()` échappent automatiquement le texte donné (`p"ss` est stocké `p\"ss`). Pour récupérer le vrai texte (un mot de passe par exemple), utiliser `unescapeString()`, puis l'effacer avec `stringToZero()` avant de le libérer. Pour écrire un fichier sensible avec `fprintfValue()`, appeler `setvbuf(file, NULL, _IONBF, 0)` juste après le `fopen()` : sinon `stdio` garde une copie du texte dans un tampon que `fclose()` libère sans l'effacer. `getValueFromObject()` et `getIndexFromObject()` prennent aussi le texte normal de la clé.
+- **Les strings sont gardées au format JSON**, échappements compris (`"a\nb"` reste `a`, `\`, `n`, `b`), et réécrites à l'identique. `newJsonString()`, `addToObject()` et `modifyObject()` échappent automatiquement le texte donné (`p"ss` est stocké `p\"ss`). Pour récupérer le vrai texte (un mot de passe par exemple), utiliser `unescapeString()`, puis l'effacer avec `stringToZero()` avant de le libérer. `fprintfValue()` écrit sans le tampon de `stdio` (aucune copie du texte gardée en mémoire) : l'appeler juste après le `fopen()`, avant toute autre opération sur ce fichier. `getValueFromObject()` et `getIndexFromObject()` prennent aussi le texte normal de la clé.
 - **`\uXXXX`** : `unescapeString()` ne décode pour l'instant que les caractères de `\u0001` à `\u007F`. Un `é` écrit `\u00e9` (par Python par exemple) est refusé.
 - **Nombres** : 63 caractères au maximum. Un entier trop grand pour un `long long`, ou un nombre de plus de 15 chiffres significatifs, est gardé **en texte** (`JSON_EXPONENTIAL`), sans aucune perte. `-0` est lu comme `0`, et `NaN` / l'infini sont refusés (ils n'existent pas en JSON).
 - **Erreurs** : en plus du message dans le `JSON_ERROR`, `initCson()` écrit sur `stderr` la ligne et la colonne du problème (`Error : invalid JSON at line 3, column 11`).

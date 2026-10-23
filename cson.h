@@ -115,8 +115,8 @@ int cpyArray(JsonArray* dest, JsonArray* src);
 
 void printfValue(JsonValue value);              // affiche à l'écran (sans retour à la ligne final)
 int fprintfValue(FILE* file, JsonValue value);  // écrit dans file. Renvoie 1 si l'écriture a échoué (disque plein...)
-// Texte sensible : faire setvbuf(file, NULL, _IONBF, 0) juste après fopen, sinon stdio en garde une copie
-// dans un tampon que fclose libère sans l'effacer.
+// fprintfValue passe file sans tampon (aucune copie du texte gardée par stdio) :
+// l'appeler juste après fopen, avant toute autre opération sur ce fichier.
 
 //////////////////////////////////////////// libération ////////////////////////////////////////////
 
