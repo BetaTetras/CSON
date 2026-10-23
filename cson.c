@@ -7,6 +7,7 @@
 #define BUFFER_DEFAULT_SIZE 64
 #define DEBUG_VALUE 0
 #define JSON_MAX_DEPTH 512  // Profondeur max d'imbrication ({ et [) acceptée par la validation
+#define HEXA_TAB "0123456789abcdef"
 
 // Les types et les fonctions publiques sont dans cson.h.
 // Tout ce qui suit est interne : "static" les rend invisibles en dehors de ce fichier.
@@ -16,7 +17,11 @@ static JsonType getType(char* json_str,size_t position);
 static long getSize(FILE* file);
 static int loadJson(char** dest,FILE* file);
 static int whitespaceCleaner(char* src,char** dest);
-static int isEscaped(char* str, size_t position) ;
+static int isEscaped(char* str, size_t position);
+static char witchEscapeChar(char c);
+static char witchCharEscape(char c);
+static int getPosInHEXA_TAB(char c);
+static size_t findKey(JsonObject* obj, char* storedKey);
 
 // parsing (suppose un texte déjà validé par validateJson)
 static JsonValue parseOBJ(char* json_str, size_t* position);
@@ -54,6 +59,7 @@ static int _strcmp(char* str1,char* str2);
 static int _strcpybxy(char **dest, char *src, size_t x, size_t y);
 static int _strcpy(char** dest,char* src);
 static int _strtod(char* str,double *res);
+static int _strecp(char** dest,char* src);
 
 // conversion to str to x
 static int _strtoi(char* str,long long int* res);
@@ -70,6 +76,9 @@ JsonValue initCson(char* path){
         json.value.string = "cannot open file";
         return json;
     }
+    // Sans tampon : sinon fread passe par un bloc interne de stdio, que fclose libère sans l'effacer
+    // (tout le coffre y resterait en clair). À faire avant toute lecture du fichier.
+    setvbuf(file, NULL, _IONBF, 0);
 
     char* json_str = NULL;
     state = loadJson(&json_str, file);
@@ -94,6 +103,8 @@ JsonValue initCson(char* path){
         json.value.string = "cannot compute size";
         return json;
     }
+    // taille de tout le texte : whitespaceCleaner le raccourcit sur place, mais les octets d'après restent dans le bloc
+    size_t fileSize = size;
 
     char* start;
     if((unsigned char)json_str[0] == 0xEF && (unsigned char)json_str[1] == 0xBB && (unsigned char)json_str[2] == 0xBF){
@@ -117,6 +128,7 @@ JsonValue initCson(char* path){
         }
         fprintf(stderr, "Error : invalid JSON at line %zu, column %zu\n", line, column);
         json.value.string = "invalid JSON";
+        stringToZero(json_str, fileSize);
         free(json_str);
         return json;
     }
@@ -126,6 +138,7 @@ JsonValue initCson(char* path){
     size_t pos = 0;
     json = parseValue(start, &pos);
 
+    stringToZero(json_str, fileSize);   // tout le coffre est dans ce texte : on l'efface avant de rendre le bloc
     free(json_str);   // start n'est qu'une façon de lire ce bloc : un seul free
     return json;
 }
@@ -437,11 +450,13 @@ static void fprintfArray(FILE* file, int* depth, JsonArray ary){
 
 int newJsonObject(JsonValue* dest){
     if(dest == NULL){
+        fprintf(stderr, "Error : cannot create the value (dest is NULL)\n");
         return 1;
     }
     *dest = initJsonValue(JSON_OBJECT);
     dest->value.object =(JsonObject*)malloc(sizeof(JsonObject));
     if(dest->value.object == NULL){
+        fprintf(stderr, "Error : allocation failed while creating an object\n");
         dest->type = JSON_ERROR;
         dest->value.string = "out of memory";
         return 1;
@@ -454,11 +469,13 @@ int newJsonObject(JsonValue* dest){
 
 int newJsonArray(JsonValue* dest){
     if(dest == NULL){
+        fprintf(stderr, "Error : cannot create the value (dest is NULL)\n");
         return 1;
     }
     *dest = initJsonValue(JSON_ARRAY);
     dest->value.array = (JsonArray*)malloc(sizeof(JsonArray));
     if(dest->value.array == NULL){
+        fprintf(stderr, "Error : allocation failed while creating an array\n");
         dest->type = JSON_ERROR;
         dest->value.string = "out of memory";
         return 1;
@@ -471,6 +488,7 @@ int newJsonArray(JsonValue* dest){
 
 int newJsonString(JsonValue* dest,char* str){
     if(dest == NULL){
+        fprintf(stderr, "Error : cannot create the value (dest is NULL)\n");
         return 1;
     }
     
@@ -478,8 +496,9 @@ int newJsonString(JsonValue* dest,char* str){
     dest->value.string = NULL;
     int state;
     
-    state = _strcpy(&dest->value.string,str);
+    state = _strecp(&dest->value.string,str);
     if(state){
+        fprintf(stderr, "Error : cannot create the string (str is NULL or out of memory)\n");
         dest->type = JSON_ERROR;
         dest->value.string = "out of memory";
         return 1;
@@ -490,6 +509,7 @@ int newJsonString(JsonValue* dest,char* str){
 
 int newJsonNull(JsonValue* dest){
     if(dest == NULL){
+        fprintf(stderr, "Error : cannot create the value (dest is NULL)\n");
         return 1;
     }
     
@@ -501,9 +521,11 @@ int newJsonNull(JsonValue* dest){
 
 int newJsonBool(JsonValue* dest,int _bool){
     if(dest == NULL){
+        fprintf(stderr, "Error : cannot create the value (dest is NULL)\n");
         return 1;
     }
     if(_bool > 1 || _bool < 0){
+        fprintf(stderr, "Error : a boolean must be 0 or 1 (got %d)\n", _bool);
         *dest = initJsonValue(JSON_ERROR);
         dest->value.string = "an error occurred in the initialisation of a boolean value (!0 or 1)"; 
         return 1;
@@ -517,6 +539,7 @@ int newJsonBool(JsonValue* dest,int _bool){
 
 int newJsonNumber(JsonValue* dest,long long int _int){
     if(dest == NULL){
+        fprintf(stderr, "Error : cannot create the value (dest is NULL)\n");
         return 1;
     }
     
@@ -528,10 +551,12 @@ int newJsonNumber(JsonValue* dest,long long int _int){
 
 int newJsonDecimal(JsonValue* dest,double _dec){
     if(dest == NULL){
+        fprintf(stderr, "Error : cannot create the value (dest is NULL)\n");
         return 1;
     }
 
     if(_dec - _dec != 0.0){
+        fprintf(stderr, "Error : NaN or infinity is not allowed in JSON\n");
         *dest = initJsonValue(JSON_ERROR);
         dest->value.string = "NaN or infinity is not allowed";
         return 1;
@@ -545,9 +570,11 @@ int newJsonDecimal(JsonValue* dest,double _dec){
 
 int newJsonExponencial(JsonValue* dest,char* exp){
     if(dest == NULL){
+        fprintf(stderr, "Error : cannot create the value (dest is NULL)\n");
         return 1;
     }
     if(exp == NULL){
+        fprintf(stderr, "Error : cannot create the number (text is NULL)\n");
         *dest = initJsonValue(JSON_ERROR);
         dest->value.string = "number text is NULL";
         return 1;
@@ -558,6 +585,7 @@ int newJsonExponencial(JsonValue* dest,char* exp){
     size_t len = _strlen(exp);
     size_t pos = 0;
     if(validateNumber(exp, len, &pos) != 0 || pos != len){
+        fprintf(stderr, "Error : cannot create the number (invalid JSON number)\n");
         *dest = initJsonValue(JSON_ERROR);
         dest->value.string = "invalid number";
         return 1;
@@ -569,6 +597,7 @@ int newJsonExponencial(JsonValue* dest,char* exp){
     
     state = _strcpy(&dest->value.string,exp);
     if(state){
+        fprintf(stderr, "Error : allocation failed while creating a number\n");
         dest->type = JSON_ERROR;
         dest->value.string = "out of memory";
         return 1;
@@ -583,25 +612,35 @@ int newJsonExponencial(JsonValue* dest,char* exp){
 
 int addToObject(JsonObject* obj, char* key, JsonValue value,size_t index){
     if(obj == NULL || key == NULL || obj->nbOfElement<index){
-        return 1;
-    }
-
-    if(getIndexFromObject(obj,key) != (size_t)-1){
+        fprintf(stderr, "Error : cannot add to the object (obj or key is NULL, or index out of range)\n");
         return 1;
     }
 
     char* cpy_key = NULL;
-    if(_strcpy(&cpy_key, key)){
+    if(_strecp(&cpy_key, key)){
+        fprintf(stderr, "Error : allocation failed while copying the key\n");
         return 1;
     }
+
+    if(findKey(obj,cpy_key) != (size_t)-1){
+        fprintf(stderr, "Error : cannot add to the object (the key already exists)\n");
+        stringToZero(cpy_key, _strlen(cpy_key));
+        free(cpy_key);
+        return 1;
+    }
+
     JsonValue cpy_value ;
     if(cpyValue(&cpy_value, &value)){
+        fprintf(stderr, "Error : cannot add to the object (copy of the value failed)\n");
+        stringToZero(cpy_key, _strlen(cpy_key));
         free(cpy_key);
         return 1;
     }
 
     JsonPair* newListe = (JsonPair*)realloc(obj->listeOfPair, (obj->nbOfElement + 1) * sizeof(JsonPair));
     if(newListe == NULL){
+        fprintf(stderr, "Error : allocation failed while adding to the object\n");
+        stringToZero(cpy_key, _strlen(cpy_key));
         free(cpy_key);
         freeValue(cpy_value);
         return 1;
@@ -621,16 +660,19 @@ int addToObject(JsonObject* obj, char* key, JsonValue value,size_t index){
 
 int addToArray(JsonArray* ary, JsonValue value, size_t index){
     if(ary == NULL || ary->nbOfElement < index){
+        fprintf(stderr, "Error : cannot add to the array (ary is NULL or index out of range)\n");
         return 1;
     }
 
     JsonValue cpy_value;
     if(cpyValue(&cpy_value, &value)){
+        fprintf(stderr, "Error : cannot add to the array (copy of the value failed)\n");
         return 1;
     }
 
     JsonValue* newListe = (JsonValue*)realloc(ary->listeOfValue, (ary->nbOfElement + 1) * sizeof(JsonValue));
-    if(newListe == NULL){ 
+    if(newListe == NULL){
+        fprintf(stderr, "Error : allocation failed while adding to the array\n");
         freeValue(cpy_value);
         return 1;
     }
@@ -649,9 +691,11 @@ int addToArray(JsonArray* ary, JsonValue value, size_t index){
 
 int removeToObject(JsonObject* obj, size_t index){
     if(obj == NULL || index >= obj->nbOfElement){
+        fprintf(stderr, "Error : cannot remove from the object (obj is NULL or index out of range)\n");
         return 1;
     }
 
+    stringToZero(obj->listeOfPair[index].key, _strlen(obj->listeOfPair[index].key));
     free(obj->listeOfPair[index].key);
     freeValue(obj->listeOfPair[index].value);
 
@@ -676,6 +720,7 @@ int removeToObject(JsonObject* obj, size_t index){
 
 int removeToArray(JsonArray* ary, size_t index){
     if(ary == NULL || index >= ary->nbOfElement){
+        fprintf(stderr, "Error : cannot remove from the array (ary is NULL or index out of range)\n");
         return 1;
     }
 
@@ -704,28 +749,33 @@ int removeToArray(JsonArray* ary, size_t index){
 
 int modifyObject(JsonObject* obj,JsonPair paire,size_t index){
     if(obj == NULL || index >= obj->nbOfElement){
-        return 1;
-    }
-    size_t isFound = getIndexFromObject(obj,paire.key);
-    if(isFound != (size_t)-1 && isFound != index){
-        fprintf(stderr, "Error : a identical key was found when trying to modify a object (%s)\n",paire.key);
-        return 1;
-    }
-    size_t paireLen = _strlen(paire.key);
-    if(paireLen == (size_t)-1){
+        fprintf(stderr, "Error : cannot modify the object (obj is NULL or index out of range)\n");
         return 1;
     }
 
     JsonPair newPair;
     newPair.key = NULL;
-    if(_strcpy(&newPair.key,paire.key)){
+    if(_strecp(&newPair.key,paire.key)){
+        fprintf(stderr, "Error : cannot modify the object (key is NULL or out of memory)\n");
         return 1;
     }
-    if(cpyValue(&newPair.value,&paire.value)){
+
+    size_t isFound = findKey(obj,newPair.key);
+    if(isFound != (size_t)-1 && isFound != index){
+        fprintf(stderr, "Error : cannot modify the object (the key already exists at another index)\n");
+        stringToZero(newPair.key, _strlen(newPair.key));
         free(newPair.key);
         return 1;
     }
 
+    if(cpyValue(&newPair.value,&paire.value)){
+        fprintf(stderr, "Error : cannot modify the object (copy of the value failed)\n");
+        stringToZero(newPair.key, _strlen(newPair.key));
+        free(newPair.key);
+        return 1;
+    }
+
+    stringToZero(obj->listeOfPair[index].key, _strlen(obj->listeOfPair[index].key));
     free(obj->listeOfPair[index].key);
     freeValue(obj->listeOfPair[index].value);
     obj->listeOfPair[index] = newPair;
@@ -735,11 +785,13 @@ int modifyObject(JsonObject* obj,JsonPair paire,size_t index){
 
 int modifyArray(JsonArray* ary, JsonValue value, size_t index){
     if(ary == NULL || index >= (size_t)ary->nbOfElement){
+        fprintf(stderr, "Error : cannot modify the array (ary is NULL or index out of range)\n");
         return 1;
     }
 
     JsonValue newValue;
     if(cpyValue(&newValue, &value)){
+        fprintf(stderr, "Error : cannot modify the array (copy of the value failed)\n");
         return 1;
     }
 
@@ -751,24 +803,37 @@ int modifyArray(JsonArray* ary, JsonValue value, size_t index){
 //////////////////////////////////////////// get function ////////////////////////////////////////////
 
 JsonValue* getValueFromObject(JsonObject* obj,char* key){
-    if(obj == NULL){
+    size_t index = getIndexFromObject(obj,key);
+    if(index == (size_t)-1){
         return NULL;
     }
-    for(size_t i=0;i<obj->nbOfElement;i++){
-        if(_strcmp(obj->listeOfPair[i].key,key) == 0){
-            return &obj->listeOfPair[i].value;
-        }
-    }
 
-    return NULL;
+    return &obj->listeOfPair[index].value;
 }
 
 size_t getIndexFromObject(JsonObject* obj,char* key){
     if(obj == NULL){
         return (size_t)-1;
     }
+
+    // les clés sont stockées échappées (k\" pour k") : on échappe la clé cherchée de la même façon
+    char* cpy_key = NULL;
+    if(_strecp(&cpy_key, key)){
+        fprintf(stderr, "Error : cannot search the key (key is NULL or out of memory)\n");
+        return (size_t)-1;
+    }
+    size_t index = findKey(obj,cpy_key);
+    stringToZero(cpy_key, _strlen(cpy_key));
+    free(cpy_key);
+
+    return index;
+}
+
+// Cherche une clé déjà échappée (forme stockée).
+// Pour addToObject / modifyObject, qui ont déjà échappé leur clé : passer par getIndexFromObject l'échapperait deux fois.
+static size_t findKey(JsonObject* obj, char* storedKey){
     for(size_t i=0;i<obj->nbOfElement;i++){
-        if(_strcmp(obj->listeOfPair[i].key,key) == 0){
+        if(_strcmp(obj->listeOfPair[i].key,storedKey) == 0){
             return i;
         }
     }
@@ -1144,7 +1209,8 @@ static JsonValue parseOBJ(char* json_str, size_t* position){
         state = _strcpy(&buffeur_pair.key, buffeur_value.value.string);
         for(size_t i=0;i<NumberOfElement;i++){
             if(_strcmp(buffeur_pair.key,obj_value.value.object->listeOfPair[i].key) == 0){
-                fprintf(stderr, "Error : duplicate key \"%s\"\n", buffeur_pair.key);
+                fprintf(stderr, "Error : duplicate key in an object\n");
+                stringToZero(buffeur_pair.key, _strlen(buffeur_pair.key));
                 free(buffeur_pair.key);
                 freeValue(buffeur_value);
                 obj_value.value.object->nbOfElement = NumberOfElement;
@@ -1712,6 +1778,7 @@ void freeValue(JsonValue value){
         break;
         case JSON_STRING:
         case JSON_EXPONENTIAL:{
+            stringToZero(value.value.string, _strlen(value.value.string));
             free(value.value.string);
         }
         break;
@@ -1732,6 +1799,7 @@ void freeObject(JsonObject *obj){
         return;
     }
     for(size_t i=0;i<obj->nbOfElement;i++){
+        stringToZero(obj->listeOfPair[i].key, _strlen(obj->listeOfPair[i].key));
         free(obj->listeOfPair[i].key);
         switch(obj->listeOfPair[i].value.type){
             case JSON_BOOL:
@@ -1742,6 +1810,7 @@ void freeObject(JsonObject *obj){
             break;
             case JSON_STRING:
             case JSON_EXPONENTIAL:{
+                stringToZero(obj->listeOfPair[i].value.value.string, _strlen(obj->listeOfPair[i].value.value.string));
                 free(obj->listeOfPair[i].value.value.string);
             }
             break;
@@ -1774,6 +1843,7 @@ void freeArray(JsonArray *ary){
             break;
             case JSON_STRING:
             case JSON_EXPONENTIAL:{
+                stringToZero(ary->listeOfValue[i].value.string, _strlen(ary->listeOfValue[i].value.string));
                 free(ary->listeOfValue[i].value.string);
             }
             break;
@@ -1790,6 +1860,18 @@ void freeArray(JsonArray *ary){
     free(ary->listeOfValue);
     free(ary);
     debug("free ary\n");
+}
+
+// volatile : le compilateur n'a pas le droit de supprimer ces écritures,
+// même si le bloc est libéré juste après et que personne ne relit les zéros
+void stringToZero(char* str,size_t size){
+    if(str == NULL){
+        return;
+    }
+    volatile char* p = str;
+    for(size_t i=0;i<size;i++){
+        p[i] = 0x00;
+    }
 }
 
 //////////////////////////////////////////// cpy function ////////////////////////////////////////////
@@ -1913,6 +1995,7 @@ int cpyObject(JsonObject* dest,JsonObject* src){
     }else{
         if(dest->listeOfPair != NULL){
             for(size_t i = 0; i < dest->nbOfElement; i++){
+                stringToZero(dest->listeOfPair[i].key, _strlen(dest->listeOfPair[i].key));
                 free(dest->listeOfPair[i].key);
                 freeValue(dest->listeOfPair[i].value);
             }
@@ -1929,8 +2012,9 @@ int cpyObject(JsonObject* dest,JsonObject* src){
     for(size_t i=0;i<dest->nbOfElement;i++){
         state = _strcpy(&dest->listeOfPair[i].key,src->listeOfPair[i].key);
         if(state){
-            fprintf(stderr, "Error : copy of the key \"%s\" failed\n", src->listeOfPair[i].key);
+            fprintf(stderr, "Error : copy of a key failed\n");
             for(size_t j = 0; j < i; j++){
+                stringToZero(dest->listeOfPair[j].key, _strlen(dest->listeOfPair[j].key));
                 free(dest->listeOfPair[j].key);
                 freeValue(dest->listeOfPair[j].value);
                 
@@ -1943,9 +2027,11 @@ int cpyObject(JsonObject* dest,JsonObject* src){
 
         state = cpyValue(&dest->listeOfPair[i].value,&src->listeOfPair[i].value);
         if(state){
-            fprintf(stderr, "Error : copy of the value of the key \"%s\" failed\n", src->listeOfPair[i].key);
+            fprintf(stderr, "Error : copy of the value of a key failed\n");
+            stringToZero(dest->listeOfPair[i].key, _strlen(dest->listeOfPair[i].key));
             free(dest->listeOfPair[i].key);
             for(size_t j = 0; j < i; j++){
+                stringToZero(dest->listeOfPair[j].key, _strlen(dest->listeOfPair[j].key));
                 free(dest->listeOfPair[j].key);
                 freeValue(dest->listeOfPair[j].value);
                 dest->nbOfElement = 0;
@@ -2030,10 +2116,16 @@ static int loadJson(char** dest,FILE* file){
     // On lit tout le fichier et le décale dans dest
     long read = fread(*dest,1,size,file);
     if(read < size){
+        stringToZero(*dest, (size_t)size);
+        free(*dest);
+        *dest = NULL;
         return 1;
     }
     (*dest)[size] = '\0';
     if((long)_strlen(*dest) < size){
+        stringToZero(*dest, (size_t)size);   // le texte après l'octet NUL peut contenir des mots de passe
+        free(*dest);
+        *dest = NULL;
         return 2;
     }
     return 0;
@@ -2247,7 +2339,6 @@ static int _strcpy(char** dest,char* src){
     if(src == NULL){
         return 1;
     }
-
     size_t size = _strlen(src) + 1;
 
     // realloc dans tmp : s'il échoue, *dest garde l'ancien bloc (sinon il fuit)
@@ -2266,6 +2357,165 @@ static int _strcpy(char** dest,char* src){
         (*dest)[i] = src[i];
     }
     (*dest)[size-1] = '\0';
+    return 0;
+}
+
+// string echapement
+static int _strecp(char** dest,char* src){
+    if(src == NULL || *dest != NULL){
+        return 1;
+    }
+
+    // 1er passage : la taille finale, pour un seul malloc
+    // (un realloc qui déplace le bloc libère l'ancien sans l'effacer : le mot de passe y resterait)
+    size_t newSize = 0;
+    for(size_t i=0;src[i] != '\0';i++){
+        if(src[i] == '\\' || src[i] == '"'){
+            newSize +=2;
+        }else if(src[i] == '\n' || src[i] == '\r' || src[i] == '\b' || src[i] == '\f' || src[i] == '\t'){
+            newSize +=2;
+        }else if((unsigned char)src[i] < 0x20){
+            newSize +=6;
+        }else{
+            newSize ++;
+        }
+    }
+    newSize++;  // le '\0' final
+
+    *dest = malloc(newSize);
+    if(*dest == NULL){
+        return 1;
+    }
+
+    size_t read = 0;
+    size_t write = 0;
+    char c;
+
+    for(read = 0; src[read] != '\0'; read++){
+        switch(src[read]){
+            case '\\':
+            case '"':
+                (*dest)[write] = '\\';
+                (*dest)[write+1] = src[read];
+                write += 2;
+            break;
+            case '\n':
+            case '\r':
+            case '\b':
+            case '\f':
+            case '\t':
+                c = witchEscapeChar(src[read]);
+                if(c == 'x'){
+                    stringToZero(*dest, write);
+                    free(*dest);
+                    *dest = NULL;
+                    return 1;
+                }
+                (*dest)[write] = '\\';
+                (*dest)[write+1] = c;
+                write += 2;
+            break;
+            default:{
+                if((unsigned char)src[read] < 0x20){
+                    (*dest)[write] = '\\';
+                    (*dest)[write+1] = 'u';
+                    (*dest)[write+2] = '0';
+                    (*dest)[write+3] = '0';
+                    (*dest)[write+4] = HEXA_TAB[(src[read]) >> 4];
+                    (*dest)[write+5] = HEXA_TAB[(src[read]) & 0xF];
+                    write += 6;
+                    break;
+                }
+                (*dest)[write] = src[read];
+                write ++;
+            break;
+            }
+        }
+    }
+    (*dest)[write] = '\0';
+    return 0;
+}
+
+// string undo echapement (publique : voir cson.h)
+int unescapeString(char** dest,char* src){
+    if(src == NULL || *dest != NULL){
+        return 1;
+    }
+    size_t size = _strlen(src) + 1;
+
+    // le texte décodé est toujours plus court ou égal : un seul malloc suffit
+    *dest = malloc(size);
+    if(*dest == NULL){
+        return 1;
+    }
+
+    size_t read = 0;
+    size_t write = 0;
+    char c;
+
+    for(read = 0; src[read] != '\0'; read++){
+        if(src[read] == '\\'){
+            switch(src[read+1]){
+                case '\\':
+                case '"':
+                case '/':
+                    (*dest)[write] = src[read+1];
+                    write++;
+                    read++;     // saute le caractère après '\'
+                break;
+                case 'n':
+                case 'r':
+                case 'b':
+                case 'f':
+                case 't':
+                    c = witchCharEscape(src[read+1]);
+                    if(c == 'x'){
+                        stringToZero(*dest, write);
+                        free(*dest);
+                        *dest = NULL;
+                        return 1;
+                    }
+                    (*dest)[write] = c;
+                    write++;
+                    read++;     // saute la lettre
+                break;
+                case 'u':{
+                    int accumulateur = 0;
+                    int pos;
+                    for(int i=1;i<5;i++){
+                        pos = getPosInHEXA_TAB(src[read+1+i]);
+                        if(pos == -1){
+                            stringToZero(*dest, write);
+                            free(*dest);
+                            *dest = NULL;
+                            return 1;
+                        }
+                        accumulateur = accumulateur * 16 + pos;
+                    }
+                    if(accumulateur == 0 || accumulateur >= 0x80){
+                        stringToZero(*dest, write);
+                        free(*dest);
+                        *dest = NULL;
+                        return 1;
+                    }
+                    (*dest)[write] = accumulateur;
+                    write++;
+                    read += 5;  // saute 'u' + les 4 chiffres
+                break;
+                }
+                default:
+                    // lettre inconnue après '\', ou '\' en fin de chaîne ('\0')
+                    stringToZero(*dest, write);
+                    free(*dest);
+                    *dest = NULL;
+                    return 1;
+            }
+        }else{
+            (*dest)[write] = src[read];
+            write++;
+        }
+    }
+    (*dest)[write] = '\0';
     return 0;
 }
 
@@ -2371,6 +2621,63 @@ static int _strtod(char* str,double *res){
     }
 
     return 0;
+}
+
+static char witchEscapeChar(char c){
+    switch(c){
+        case '\n':
+            return 'n';
+        break;
+        case '\t':
+            return 't';
+        break;
+        case '\r':
+            return 'r';
+        break;
+        case '\f':
+            return 'f';
+        break;
+        case '\b':
+            return 'b';
+        break;
+        default : 
+            return 'x';
+    }
+}
+
+static char witchCharEscape(char c){
+    switch(c){
+        case 'n':
+            return '\n';
+        break;
+        case 't':
+            return '\t';
+        break;
+        case 'r':
+            return '\r';
+        break;
+        case 'f':
+            return '\f';
+        break;
+        case 'b':
+            return '\b';
+        break;
+        default : 
+            return 'x';
+    }
+}
+
+static int getPosInHEXA_TAB(char c){
+    if(c >= '0' && c <= '9'){
+        return c - '0';
+    }else if(c >= 'a' && c <= 'f'){
+        return c - 'a' + 10;
+    }else if(c >= 'A' && c <= 'F'){
+        return c - 'A' + 10;
+    }
+    // +10 car dans "0123456789abcdef" il y'a 0[...]9
+
+    return -1;
 }
 
 ////////////////////////////////////////////////////

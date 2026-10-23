@@ -71,7 +71,7 @@ JsonValue initJsonValue(JsonType type);
 
 int newJsonObject(JsonValue* dest);                    // objet vide {}
 int newJsonArray(JsonValue* dest);                     // tableau vide []
-int newJsonString(JsonValue* dest, char* str);         // copie de str, gardée telle quelle (voir README)
+int newJsonString(JsonValue* dest, char* str);         // copie de str, échappée au format JSON (" devient \") : relire avec unescapeString
 int newJsonNull(JsonValue* dest);
 int newJsonBool(JsonValue* dest, int _bool);           // 0 ou 1 uniquement
 int newJsonNumber(JsonValue* dest, long long int _int);
@@ -80,6 +80,7 @@ int newJsonExponencial(JsonValue* dest, char* exp);    // texte d'un nombre JSON
 
 //////////////////////////////////////////// modification ////////////////////////////////////////////
 // Les valeurs données sont COPIÉES : l'appelant garde (et libère) les siennes.
+// Les clés données à addToObject / modifyObject sont échappées comme dans newJsonString.
 
 int addToObject(JsonObject* obj, char* key, JsonValue value, size_t index);  // insère à index (0..nbOfElement), clé déjà présente refusée
 int addToArray(JsonArray* ary, JsonValue value, size_t index);               // insère à index (0..nbOfElement)
@@ -91,11 +92,17 @@ int modifyArray(JsonArray* ary, JsonValue value, size_t index);              // 
 //////////////////////////////////////////// accès ////////////////////////////////////////////
 
 // Pointeur vers la valeur de la clé `key`, ou NULL si elle n'existe pas.
+// `key` est le texte normal ("k\"" en C pour la clé k") : elle est échappée comme dans addToObject.
 // Attention : ce pointeur n'est plus valable après un add / remove sur le même objet.
 JsonValue* getValueFromObject(JsonObject* obj, char* key);
 
-// Index de la clé `key`, ou (size_t)-1 si elle n'existe pas.
+// Index de la clé `key` (texte normal, comme getValueFromObject), ou (size_t)-1 si elle n'existe pas.
 size_t getIndexFromObject(JsonObject* obj, char* key);
+
+// Décode une string stockée (forme JSON : \" \\ \n \u0041...) vers le texte réel, par exemple un mot de passe.
+// *dest doit valoir NULL : il reçoit une nouvelle chaîne, à effacer avec stringToZero puis libérer avec free.
+// Renvoie 1 si src est NULL ou mal formée, ou si un \uXXXX sort de 0x01..0x7F (non géré pour l'instant).
+int unescapeString(char** dest, char* src);
 
 //////////////////////////////////////////// copie ////////////////////////////////////////////
 // Copie complète (profonde). dest et src doivent être différents.
@@ -108,12 +115,19 @@ int cpyArray(JsonArray* dest, JsonArray* src);
 
 void printfValue(JsonValue value);              // affiche à l'écran (sans retour à la ligne final)
 int fprintfValue(FILE* file, JsonValue value);  // écrit dans file. Renvoie 1 si l'écriture a échoué (disque plein...)
+// Texte sensible : faire setvbuf(file, NULL, _IONBF, 0) juste après fopen, sinon stdio en garde une copie
+// dans un tampon que fclose libère sans l'effacer.
 
 //////////////////////////////////////////// libération ////////////////////////////////////////////
 
 void freeValue(JsonValue value);   // libère tout ce que contient la valeur (récursivement)
 void freeObject(JsonObject *obj);  // libère l'objet et la structure elle-même
 void freeArray(JsonArray *ary);    // libère le tableau et la structure elle-même
+// Les trois effacent (mettent à 0) les strings et les clés avant de les libérer.
+
+// Met à 0 les `size` premiers octets de str, sans que le compilateur puisse supprimer l'effacement.
+// À appeler avant free() sur un texte sensible, par exemple le mot de passe rendu par unescapeString.
+void stringToZero(char* str, size_t size);
 
 #ifdef __cplusplus
 }

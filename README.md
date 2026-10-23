@@ -1,7 +1,7 @@
 # 📦 | CSON
 ![Badge Langage](https://img.shields.io/badge/Langage%20:-C-blue?style=plastic)
 ![Badge Licence](https://img.shields.io/badge/Licence%20:-MIT-darkblue?style=plastic)
-![Badge Version](https://img.shields.io/badge/Version%20:-v1-lime?style=plastic)
+![Badge Version](https://img.shields.io/badge/Version%20:-v1.1-lime?style=plastic)
 ![Badge OS](https://img.shields.io/badge/OS%20:-LINUX-blue?style=plastic)
 ![Badge État](https://img.shields.io/badge/État%20%3A-Stable-green?style=plastic)
 
@@ -23,6 +23,8 @@
 | **Ajout / suppression / modification** avec `addTo...()`, `removeTo...()`, `modify...()` | `v1` |
 | **Recherche** d'une clé avec `getValueFromObject()` / `getIndexFromObject()`     | `v1`        |
 | **Copie complète** d'une valeur avec `cpyValue()`                                | `v1`        |
+| **Échappement automatique** des strings et des clés (`"` `\` `\n`...), décodage avec `unescapeString()` | `v1.1` |
+| **Effacement** des strings, des clés et du texte du fichier avant libération (`stringToZero()`) | `v1.1` |
 | [💾] *Écriture*                                                                  |             |
 | **Affichage** indenté avec `printfValue()`, **écriture** avec `fprintfValue()`   | `v1`        |
 | **Nombres sans perte** : un décimal écrit puis relu redonne exactement la même valeur | `v1`   |
@@ -33,8 +35,6 @@
 | **Gestion mémoire** complète, testée sous *valgrind* (aucune fuite)              | `v1`        |
 | **Messages d'erreur** explicites dans les `JSON_ERROR`                           | `v1`        |
 | **Tests automatiques** avec `make test`                                          | `v1`        |
-| **Lecture rapide** des gros objets (recherche des doublons avec `qsort`)         | `v2` *(prévu)* |
-| **Moins de mémoire** utilisée par les petits tableaux et objets                  | `v2` *(prévu)* |
 
 ## ⚙️ | Fonctionnement et déploiement
 ### Requis :
@@ -111,7 +111,8 @@ Les fonctions qui renvoient un `int` renvoient **0 si tout va bien** et **1 en c
 - Le message d'un `JSON_ERROR` est un texte constant : il ne faut **jamais** le libérer.
 
 ## ⚠️ | À savoir
-- **Les strings sont gardées telles quelles**, échappements compris (`"a\nb"` reste `a`, `\`, `n`, `b`), et réécrites à l'identique. Une string créée avec `newJsonString()` doit donc déjà être au format JSON : `\"` pour un guillemet, `\n` pour un retour à la ligne.
+- **Les strings sont gardées au format JSON**, échappements compris (`"a\nb"` reste `a`, `\`, `n`, `b`), et réécrites à l'identique. `newJsonString()`, `addToObject()` et `modifyObject()` échappent automatiquement le texte donné (`p"ss` est stocké `p\"ss`). Pour récupérer le vrai texte (un mot de passe par exemple), utiliser `unescapeString()`, puis l'effacer avec `stringToZero()` avant de le libérer. Pour écrire un fichier sensible avec `fprintfValue()`, appeler `setvbuf(file, NULL, _IONBF, 0)` juste après le `fopen()` : sinon `stdio` garde une copie du texte dans un tampon que `fclose()` libère sans l'effacer. `getValueFromObject()` et `getIndexFromObject()` prennent aussi le texte normal de la clé.
+- **`\uXXXX`** : `unescapeString()` ne décode pour l'instant que les caractères de `\u0001` à `\u007F`. Un `é` écrit `\u00e9` (par Python par exemple) est refusé.
 - **Nombres** : 63 caractères au maximum. Un entier trop grand pour un `long long`, ou un nombre de plus de 15 chiffres significatifs, est gardé **en texte** (`JSON_EXPONENTIAL`), sans aucune perte. `-0` est lu comme `0`, et `NaN` / l'infini sont refusés (ils n'existent pas en JSON).
 - **Erreurs** : en plus du message dans le `JSON_ERROR`, `initCson()` écrit sur `stderr` la ligne et la colonne du problème (`Error : invalid JSON at line 3, column 11`).
 - **Imbrication** : 512 niveaux de `{` et `[` au maximum.
