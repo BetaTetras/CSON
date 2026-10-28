@@ -6,7 +6,7 @@
 
 #define BUFFER_DEFAULT_SIZE 64
 #define DEBUG_VALUE 0
-#define JSON_MAX_DEPTH 512  // Profondeur max d'imbrication ({ et [) acceptée par la validation
+#define JSON_MAX_DEPTH 512
 #define HEXA_TAB "0123456789abcdef"
 
 // Les types et les fonctions publiques sont dans cson.h.
@@ -22,6 +22,8 @@ static char witchEscapeChar(char c);
 static char witchCharEscape(char c);
 static int getPosInHEXA_TAB(char c);
 static size_t findKey(JsonObject* obj, char* storedKey);
+static int bt_qsort(char** list,size_t size);
+static void swap(char** str1,char** str2);
 
 // parsing (suppose un texte déjà validé par validateJson)
 static JsonValue parseOBJ(char* json_str, size_t* position);
@@ -50,23 +52,24 @@ static int isDigitAt(char* json_str, size_t size, size_t pos);
 static void fprintfXtab(FILE* file, int x);
 static char localeDecimalPoint(void);
 static void fprintfDouble(FILE* file, double d);
+static void fprintfValueDepth(FILE* file, int* depth, JsonValue value);
 static void fprintfObject(FILE* file, int* depth, JsonObject obj);
 static void fprintfArray(FILE* file, int* depth, JsonArray ary);
 
 // _string.h
-static size_t _strlen(char* str);
-static int _strcmp(char* str1,char* str2);
-static int _strcpybxy(char **dest, char *src, size_t x, size_t y);
-static int _strcpy(char** dest,char* src);
-static int _strtod(char* str,double *res);
-static int _strecp(char** dest,char* src);
+static size_t bt_strlen(char* str);
+static int bt_strcmp(char* str1,char* str2);
+static int bt_strcpybxy(char **dest, char *src, size_t x, size_t y);
+static int bt_strcpy(char** dest,char* src);
+static int bt_strtod(char* str,double *res);
+static int bt_strecp(char** dest,char* src);
 
 // conversion to str to x
-static int _strtoi(char* str,long long int* res);
+static int bt_strtoi(char* str,long long int* res);
 
 static void debug(char* str);
 
-JsonValue initCson(char* path){
+JsonValue initCsonFromFile(char* path){
     JsonValue json = initJsonValue(JSON_ERROR);
     int state;
 
@@ -97,22 +100,31 @@ JsonValue initCson(char* path){
     }
     fclose(file);
     
-    size_t size = _strlen(json_str);
-    if(size == (size_t)-1){
-        fprintf(stderr, "Error : a problem occurred while computing the size\n");
-        json.value.string = "cannot compute size";
-        return json;
+    size_t fileSize = bt_strlen(json_str);
+
+    json = initCson(json_str);
+
+    stringToZero(json_str, fileSize);
+    free(json_str);
+    return json;
+}
+
+JsonValue initCson(char* json){
+    JsonValue json_value = initJsonValue(JSON_ERROR);
+
+    if(json == NULL){
+        fprintf(stderr, "Error : the JSON text is NULL\n");
+        json_value.value.string = "JSON text is NULL";
+        return json_value;
     }
-    // taille de tout le texte : whitespaceCleaner le raccourcit sur place, mais les octets d'après restent dans le bloc
-    size_t fileSize = size;
 
     char* start;
-    if((unsigned char)json_str[0] == 0xEF && (unsigned char)json_str[1] == 0xBB && (unsigned char)json_str[2] == 0xBF){
-        start = json_str + 3;
+    if((unsigned char)json[0] == 0xEF && (unsigned char)json[1] == 0xBB && (unsigned char)json[2] == 0xBF){
+        start = json + 3;
     }else{
-        start = json_str;
+        start = json;
     }
-    size = _strlen(start);   // sans les 3 octets du BOM s'il y en avait un
+    size_t size = bt_strlen(start);
 
     size_t errorPosition = 0;
     if(validateJson(start, size, &errorPosition) != 0){
@@ -127,20 +139,16 @@ JsonValue initCson(char* path){
             }
         }
         fprintf(stderr, "Error : invalid JSON at line %zu, column %zu\n", line, column);
-        json.value.string = "invalid JSON";
-        stringToZero(json_str, fileSize);
-        free(json_str);
-        return json;
+        json_value.value.string = "invalid JSON";
+        return json_value;
     }
 
     whitespaceCleaner(start, &start);
 
     size_t pos = 0;
-    json = parseValue(start, &pos);
+    json_value = parseValue(start, &pos);
 
-    stringToZero(json_str, fileSize);   // tout le coffre est dans ce texte : on l'efface avant de rendre le bloc
-    free(json_str);   // start n'est qu'une façon de lire ce bloc : un seul free
-    return json;
+    return json_value;
 }
 
 JsonValue initJsonValue(JsonType type){
@@ -189,18 +197,18 @@ static void fprintfDouble(FILE* file, double d){
         if(len >= (int)sizeof(buffer)){
             break;   // trop long : ajouter des chiffres ne fera que l'allonger
         }
-        // snprintf suit la locale (',' en français) : le JSON et _strtod veulent un '.'
+        // snprintf suit la locale (',' en français) : le JSON et bt_strtod veulent un '.'
         for(int i = 0; buffer[i] != '\0'; i++){
             if(buffer[i] == point){
                 buffer[i] = '.';
             }
         }
-        if(_strtod(buffer, &check) == 0 && check == d){
+        if(bt_strtod(buffer, &check) == 0 && check == d){
             found = 1;
         }
     }
     if(!found){
-        // Trop précis pour _strtod (0.1 + 0.2, 1e300...) : 17 chiffres, sera relu en texte
+        // Trop précis pour bt_strtod (0.1 + 0.2, 1e300...) : 17 chiffres, sera relu en texte
         snprintf(buffer, sizeof(buffer), "%.17g", d);
         for(int i = 0; buffer[i] != '\0'; i++){
             if(buffer[i] == point){
@@ -212,17 +220,15 @@ static void fprintfDouble(FILE* file, double d){
 }
 
 
-int fprintfValue(FILE* file, JsonValue value){
-    if(file == NULL){
-        return 1;
-    }
-    int depth = 0;
+// Écrit une valeur de n'importe quel type, à la profondeur depth (pour l'indentation des objets).
+// fprintfValue part de 0 ; fprintfObject et fprintfArray passent la leur, sinon un objet dans un objet ne serait pas décalé.
+static void fprintfValueDepth(FILE* file, int* depth, JsonValue value){
     switch(value.type){
         case JSON_ARRAY:
             if(value.value.array == NULL){
                 fprintf(file,"null");   // tableau jamais alloué (initJsonValue seul) : rien à lire
             }else{
-                fprintfArray(file,&depth,*value.value.array);
+                fprintfArray(file,depth,*value.value.array);
             }
         break;
         case JSON_BOOL:{
@@ -264,7 +270,7 @@ int fprintfValue(FILE* file, JsonValue value){
             if(value.value.object == NULL){
                 fprintf(file,"null");
             }else{
-                fprintfObject(file,&depth,*value.value.object);
+                fprintfObject(file,depth,*value.value.object);
             }
         break;
         case JSON_STRING:{
@@ -278,6 +284,14 @@ int fprintfValue(FILE* file, JsonValue value){
         default:
             fprintf(file,"\"error : unknown type\"");
     }
+}
+
+int fprintfValue(FILE* file, JsonValue value){
+    if(file == NULL){
+        return 1;
+    }
+    int depth = 0;
+    fprintfValueDepth(file, &depth, value);
 
     // fprintf écrit d'abord dans un tampon en mémoire : fflush l'envoie maintenant (disque plein -> erreur ici),
     // et ferror dit si une des écritures précédentes a échoué
@@ -300,66 +314,7 @@ static void fprintfObject(FILE* file, int* depth, JsonObject obj){
         
         fprintfXtab(file,*depth);
         fprintf(file,"\"%s\": ", obj.listeOfPair[i].key);
-        switch(obj.listeOfPair[i].value.type){
-            case JSON_OBJECT:
-                if(obj.listeOfPair[i].value.value.object == NULL){
-                    fprintf(file,"null");
-                }else{
-                    fprintfObject(file, depth, *obj.listeOfPair[i].value.value.object);
-                }
-            break;
-            case JSON_ARRAY:
-                if(obj.listeOfPair[i].value.value.array == NULL){
-                    fprintf(file,"null");
-                }else{
-                    fprintfArray(file, depth, *obj.listeOfPair[i].value.value.array);
-                }
-            break;
-            case JSON_BOOL:{
-                if(obj.listeOfPair[i].value.value.integer == 1){
-                    fprintf(file,"true");
-                }else if(obj.listeOfPair[i].value.value.integer == 0){
-                    fprintf(file,"false");
-                }else{
-                    fprintf(file,"\"Boolean error\"");
-                }
-            }
-            break;
-            case JSON_DECIMAL:
-                fprintfDouble(file,obj.listeOfPair[i].value.value.decimal);
-            break;
-            case JSON_ERROR:
-                if(obj.listeOfPair[i].value.value.string == NULL){
-                    fprintf(file,"\"error...\"");
-                }else{
-                    fprintf(file, "\"error : %s\"", obj.listeOfPair[i].value.value.string);
-                }
-            break;
-            case JSON_EXPONENTIAL:{
-                if(obj.listeOfPair[i].value.value.string == NULL){
-                    fprintf(file,"null");
-                }else{
-                    fprintf(file,"%s",obj.listeOfPair[i].value.value.string);
-                }
-            }
-            break;
-            case JSON_NULL:
-                fprintf(file,"null");
-            break;
-            case JSON_NUMBER:
-                fprintf(file,"%lld",obj.listeOfPair[i].value.value.integer);
-            break;
-            case JSON_STRING:{
-                if(obj.listeOfPair[i].value.value.string == NULL){
-                    fprintf(file,"null");
-                }else{
-                    fprintf(file,"\"%s\"",obj.listeOfPair[i].value.value.string);
-                }
-            }
-            break;
-            default:
-                fprintf(file,"\"error : unknown type\"");
-        }
+        fprintfValueDepth(file, depth, obj.listeOfPair[i].value);
         if(i < obj.nbOfElement - 1) {
             fprintf(file,",");
         }
@@ -379,66 +334,7 @@ static void fprintfArray(FILE* file, int* depth, JsonArray ary){
         return;
     }
     for(size_t i=0;i<numberOfElement;i++){
-        switch(ary.listeOfValue[i].type){
-            case JSON_OBJECT:
-                if(ary.listeOfValue[i].value.object == NULL){
-                    fprintf(file,"null");
-                }else{
-                    fprintfObject(file,depth,*ary.listeOfValue[i].value.object);
-                }
-            break;
-            case JSON_ARRAY:
-                if(ary.listeOfValue[i].value.array == NULL){
-                    fprintf(file,"null");
-                }else{
-                    fprintfArray(file,depth,*ary.listeOfValue[i].value.array);
-                }
-            break;
-            case JSON_BOOL:{
-                if(ary.listeOfValue[i].value.integer == 1){
-                    fprintf(file,"true");
-                }else if(ary.listeOfValue[i].value.integer == 0){
-                    fprintf(file,"false");
-                }else{
-                    fprintf(file,"\"Boolean error\"");
-                }
-            }
-            break;
-            case JSON_DECIMAL:
-                fprintfDouble(file,ary.listeOfValue[i].value.decimal);
-            break;
-            case JSON_ERROR:
-                if(ary.listeOfValue[i].value.string == NULL){
-                    fprintf(file,"\"error...\"");
-                }else{
-                    fprintf(file, "\"error : %s\"", ary.listeOfValue[i].value.string);
-                }
-            break;
-            case JSON_EXPONENTIAL:{
-                if(ary.listeOfValue[i].value.string == NULL){
-                    fprintf(file,"null");
-                }else{
-                    fprintf(file,"%s",ary.listeOfValue[i].value.string);
-                }
-            }
-            break;
-            case JSON_NULL:
-                fprintf(file,"null");
-            break;
-            case JSON_NUMBER:
-                fprintf(file,"%lld",ary.listeOfValue[i].value.integer);
-            break;
-            case JSON_STRING:{
-                if(ary.listeOfValue[i].value.string == NULL){
-                    fprintf(file,"null");
-                }else{
-                    fprintf(file,"\"%s\"",ary.listeOfValue[i].value.string);
-                }
-            }
-            break;
-            default:
-                fprintf(file,"\"error : unknown type\"");
-        }
+        fprintfValueDepth(file, depth, ary.listeOfValue[i]);
         if(i < ary.nbOfElement - 1) {
             fprintf(file,",");
         }
@@ -496,7 +392,7 @@ int newJsonString(JsonValue* dest,char* str){
     dest->value.string = NULL;
     int state;
     
-    state = _strecp(&dest->value.string,str);
+    state = bt_strecp(&dest->value.string,str);
     if(state){
         fprintf(stderr, "Error : cannot create the string (str is NULL or out of memory)\n");
         dest->type = JSON_ERROR;
@@ -582,7 +478,7 @@ int newJsonExponencial(JsonValue* dest,char* exp){
 
     // Le texte est écrit tel quel (sans guillemets) : il doit être un nombre JSON valide, et rien d'autre.
     // validateNumber s'arrête à la fin du nombre : pos doit donc arriver au bout ("12abc" s'arrête sur 'a')
-    size_t len = _strlen(exp);
+    size_t len = bt_strlen(exp);
     size_t pos = 0;
     if(validateNumber(exp, len, &pos) != 0 || pos != len){
         fprintf(stderr, "Error : cannot create the number (invalid JSON number)\n");
@@ -595,7 +491,7 @@ int newJsonExponencial(JsonValue* dest,char* exp){
     dest->value.string = NULL;
     int state;
     
-    state = _strcpy(&dest->value.string,exp);
+    state = bt_strcpy(&dest->value.string,exp);
     if(state){
         fprintf(stderr, "Error : allocation failed while creating a number\n");
         dest->type = JSON_ERROR;
@@ -617,14 +513,14 @@ int addToObject(JsonObject* obj, char* key, JsonValue value,size_t index){
     }
 
     char* cpy_key = NULL;
-    if(_strecp(&cpy_key, key)){
+    if(bt_strecp(&cpy_key, key)){
         fprintf(stderr, "Error : allocation failed while copying the key\n");
         return 1;
     }
 
     if(findKey(obj,cpy_key) != (size_t)-1){
         fprintf(stderr, "Error : cannot add to the object (the key already exists)\n");
-        stringToZero(cpy_key, _strlen(cpy_key));
+        stringToZero(cpy_key, bt_strlen(cpy_key));
         free(cpy_key);
         return 1;
     }
@@ -632,7 +528,7 @@ int addToObject(JsonObject* obj, char* key, JsonValue value,size_t index){
     JsonValue cpy_value ;
     if(cpyValue(&cpy_value, &value)){
         fprintf(stderr, "Error : cannot add to the object (copy of the value failed)\n");
-        stringToZero(cpy_key, _strlen(cpy_key));
+        stringToZero(cpy_key, bt_strlen(cpy_key));
         free(cpy_key);
         return 1;
     }
@@ -640,7 +536,7 @@ int addToObject(JsonObject* obj, char* key, JsonValue value,size_t index){
     JsonPair* newListe = (JsonPair*)realloc(obj->listeOfPair, (obj->nbOfElement + 1) * sizeof(JsonPair));
     if(newListe == NULL){
         fprintf(stderr, "Error : allocation failed while adding to the object\n");
-        stringToZero(cpy_key, _strlen(cpy_key));
+        stringToZero(cpy_key, bt_strlen(cpy_key));
         free(cpy_key);
         freeValue(cpy_value);
         return 1;
@@ -695,7 +591,7 @@ int removeToObject(JsonObject* obj, size_t index){
         return 1;
     }
 
-    stringToZero(obj->listeOfPair[index].key, _strlen(obj->listeOfPair[index].key));
+    stringToZero(obj->listeOfPair[index].key, bt_strlen(obj->listeOfPair[index].key));
     free(obj->listeOfPair[index].key);
     freeValue(obj->listeOfPair[index].value);
 
@@ -755,7 +651,7 @@ int modifyObject(JsonObject* obj,JsonPair paire,size_t index){
 
     JsonPair newPair;
     newPair.key = NULL;
-    if(_strecp(&newPair.key,paire.key)){
+    if(bt_strecp(&newPair.key,paire.key)){
         fprintf(stderr, "Error : cannot modify the object (key is NULL or out of memory)\n");
         return 1;
     }
@@ -763,19 +659,19 @@ int modifyObject(JsonObject* obj,JsonPair paire,size_t index){
     size_t isFound = findKey(obj,newPair.key);
     if(isFound != (size_t)-1 && isFound != index){
         fprintf(stderr, "Error : cannot modify the object (the key already exists at another index)\n");
-        stringToZero(newPair.key, _strlen(newPair.key));
+        stringToZero(newPair.key, bt_strlen(newPair.key));
         free(newPair.key);
         return 1;
     }
 
     if(cpyValue(&newPair.value,&paire.value)){
         fprintf(stderr, "Error : cannot modify the object (copy of the value failed)\n");
-        stringToZero(newPair.key, _strlen(newPair.key));
+        stringToZero(newPair.key, bt_strlen(newPair.key));
         free(newPair.key);
         return 1;
     }
 
-    stringToZero(obj->listeOfPair[index].key, _strlen(obj->listeOfPair[index].key));
+    stringToZero(obj->listeOfPair[index].key, bt_strlen(obj->listeOfPair[index].key));
     free(obj->listeOfPair[index].key);
     freeValue(obj->listeOfPair[index].value);
     obj->listeOfPair[index] = newPair;
@@ -818,12 +714,12 @@ size_t getIndexFromObject(JsonObject* obj,char* key){
 
     // les clés sont stockées échappées (k\" pour k") : on échappe la clé cherchée de la même façon
     char* cpy_key = NULL;
-    if(_strecp(&cpy_key, key)){
+    if(bt_strecp(&cpy_key, key)){
         fprintf(stderr, "Error : cannot search the key (key is NULL or out of memory)\n");
         return (size_t)-1;
     }
     size_t index = findKey(obj,cpy_key);
-    stringToZero(cpy_key, _strlen(cpy_key));
+    stringToZero(cpy_key, bt_strlen(cpy_key));
     free(cpy_key);
 
     return index;
@@ -833,7 +729,7 @@ size_t getIndexFromObject(JsonObject* obj,char* key){
 // Pour addToObject / modifyObject, qui ont déjà échappé leur clé : passer par getIndexFromObject l'échapperait deux fois.
 static size_t findKey(JsonObject* obj, char* storedKey){
     for(size_t i=0;i<obj->nbOfElement;i++){
-        if(_strcmp(obj->listeOfPair[i].key,storedKey) == 0){
+        if(bt_strcmp(obj->listeOfPair[i].key,storedKey) == 0){
             return i;
         }
     }
@@ -1206,20 +1102,7 @@ static JsonValue parseOBJ(char* json_str, size_t* position){
             return obj_value;
         }
         buffeur_pair.key = NULL;
-        state = _strcpy(&buffeur_pair.key, buffeur_value.value.string);
-        for(size_t i=0;i<NumberOfElement;i++){
-            if(_strcmp(buffeur_pair.key,obj_value.value.object->listeOfPair[i].key) == 0){
-                fprintf(stderr, "Error : duplicate key in an object\n");
-                stringToZero(buffeur_pair.key, _strlen(buffeur_pair.key));
-                free(buffeur_pair.key);
-                freeValue(buffeur_value);
-                obj_value.value.object->nbOfElement = NumberOfElement;
-                freeObject(obj_value.value.object);
-                obj_value = initJsonValue(JSON_ERROR);
-                obj_value.value.string = "duplicate key";
-                return obj_value;
-            }
-        }
+        state = bt_strcpy(&buffeur_pair.key, buffeur_value.value.string);
         freeValue(buffeur_value);
         if(state){
             obj_value.value.object->nbOfElement = NumberOfElement;
@@ -1248,25 +1131,9 @@ static JsonValue parseOBJ(char* json_str, size_t* position){
                 obj_value.value.object->listeOfPair[NumberOfElement] = buffeur_pair;
                 NumberOfElement++;
             break;
-            case JSON_ERROR: {
-                // Avancer jusqu'au prochain délimiteur
-                while(json_str[index] != '\0' && json_str[index] != ',' && json_str[index] != '}' && json_str[index] != ']') {
-                    index++;
-                }
-                
-                JsonValue errorValue = initJsonValue(JSON_ERROR);
-                errorValue.value.string = "unknown value type";
-                
-                buffeur_pair.value = errorValue;
-                obj_value.value.object->listeOfPair[NumberOfElement] = buffeur_pair;
-                NumberOfElement++;
-                
-                // Avancer après la virgule si présente
-                if(json_str[index] == ',') {
-                    index++;
-                }
-                break;
-            }
+            case JSON_ERROR:
+            // impossible : validateJson a déjà refusé le texte
+            break;
             case JSON_NULL:
                 buffeur_pair.value = parseNULL(json_str, &index);
                 obj_value.value.object->listeOfPair[NumberOfElement] = buffeur_pair;
@@ -1308,9 +1175,40 @@ static JsonValue parseOBJ(char* json_str, size_t* position){
             return obj_value;
         }
     }
+    obj_value.value.object->nbOfElement = NumberOfElement;
+
+    int doublons = 0;
+    if(NumberOfElement >= 2){
+        char** cles = (char**)malloc(NumberOfElement * sizeof(char*));
+        if(cles == NULL){
+            freeObject(obj_value.value.object);
+            obj_value = initJsonValue(JSON_ERROR);
+            obj_value.value.string = "out of memory";
+            return obj_value;
+        }
+        for(size_t i=0;i<NumberOfElement;i++){
+            cles[i] = obj_value.value.object->listeOfPair[i].key;
+        }
+        bt_qsort(cles,NumberOfElement);
+        for(size_t i=1;i<NumberOfElement;i++){
+            if(bt_strcmp(cles[i-1], cles[i]) == 0){
+                doublons = 1;
+                break;
+            }
+        }
+        free(cles);
+    }
+
+    if(doublons == 1){
+        fprintf(stderr, "Error : duplicate key in an object\n");
+        freeObject(obj_value.value.object);
+        obj_value = initJsonValue(JSON_ERROR);
+        obj_value.value.string = "duplicate key";
+        return obj_value;
+    }
+
     
     *position = index + 1;
-    obj_value.value.object->nbOfElement = NumberOfElement;
     return obj_value;
 }
 
@@ -1381,22 +1279,8 @@ static JsonValue parseARRAY(char* json_str, size_t* position){
                 ary_value.value.array->listeOfValue[NumberOfElement] = buffeur;
                 NumberOfElement++;
             break;
-            case JSON_ERROR:{
-                while(json_str[index] != '\0' && json_str[index] != ',' && json_str[index] != '}' && json_str[index] != ']') {
-                    index++;
-                }
-
-                buffeur = initJsonValue(JSON_ERROR);
-                buffeur.value.string = "unknown value type";
-
-                ary_value.value.array->listeOfValue[NumberOfElement] = buffeur;
-                NumberOfElement++;
-
-                if(json_str[index] == ',') {
-                    index++;
-                }
-                break;
-            }
+            case JSON_ERROR:
+                // impossible : validateJson a déjà refusé le texte
             break;
             case JSON_NULL:
                 buffeur = parseNULL(json_str, &index);
@@ -1453,12 +1337,6 @@ static JsonValue parseSTRING(char* json_str,size_t* position){
 
     size_t start = *position;
 
-    if(json_str[start] != '"') {
-        str_value.type = JSON_ERROR;
-        str_value.value.string = "string without opening quote";
-        return str_value;
-    }
-
     size_t end = start;
 
     for(size_t index = start + 1; json_str[index] != '\0'; index++){
@@ -1467,21 +1345,14 @@ static JsonValue parseSTRING(char* json_str,size_t* position){
             break;
         }
     }
-
-    if(end == start){
-        str_value.type = JSON_ERROR;
-        str_value.value.string = "string without closing quote";
-        return str_value;
-    }
-
     if(end == start + 1) {
-        if(_strcpy(&str_value.value.string, "")){
+        if(bt_strcpy(&str_value.value.string, "")){
             str_value.type = JSON_ERROR;
             str_value.value.string = "out of memory";
             return str_value;
         };
     }else if(end > start) {
-        if(_strcpybxy(&str_value.value.string, json_str, start + 1, end - 1)){
+        if(bt_strcpybxy(&str_value.value.string, json_str, start + 1, end - 1)){
             str_value.type = JSON_ERROR;
             str_value.value.string = "out of memory";
             return str_value;
@@ -1504,61 +1375,17 @@ static JsonValue parseEXPONENTIAL(char* json_str,size_t* position){
         return exp_value;
     }
     int numberOfDigit = 0;
-    int numberOfDot = 0;
 
     for(size_t i = *position;json_str[i] != '\0';i++){
         char c = json_str[i];
-        int isNumberChar = (c >= '0' && c <= '9') || c == '.' || c == '-' || c == '+' || c == 'e' || c == 'E';
-        // Buffer plein ET encore un caractère du nombre à ajouter -> trop long (comme dans parseNUMBER)
-        if(numberOfDot > 1 || (isNumberChar && numberOfDigit >= BUFFER_DEFAULT_SIZE - 1)){
-            free(exp_value.value.string);
-            exp_value = initJsonValue(JSON_ERROR);
-            exp_value.value.string = "invalid exponent";
-            return exp_value;
-        }
-        if((json_str[i] >= '0' && json_str[i] <= '9') || json_str[i] == '.' || json_str[i] == '-' || json_str[i] == '+'){
-            if(json_str[i] == '-' || json_str[i] == '+' ){
-                // Un signe n'est valide qu'au tout début ('-' uniquement) ou juste après le 'e'/'E'
-                int isStart = (numberOfDigit == 0 && json_str[i] == '-');
-                int isAfterExp = (numberOfDigit > 0 && (json_str[i-1] == 'e' || json_str[i-1] == 'E'));
-                if(!isStart && !isAfterExp){
-                    free(exp_value.value.string);
-                    exp_value = initJsonValue(JSON_ERROR);
-                    exp_value.value.string = "invalid exponent";
-                    return exp_value;
-                }
-            }else if(json_str[i] == '.'){
-                numberOfDot ++;
-            }
-            exp_value.value.string[numberOfDigit] = json_str[i];
+        if((c >= '0' && c <= '9') || c == '.' || c == '-' || c == '+' || c == 'e' || c == 'E'){
+            exp_value.value.string[numberOfDigit] = c;
             numberOfDigit++;
-        }
-        else if(json_str[i] == 'e' || json_str[i] == 'E'){
-            if(i > 0 && (json_str[i-1] >= '0' && json_str[i-1] <= '9')){
-                if((json_str[i+1] >= '0' && json_str[i+1] <= '9') ||
-                                json_str[i+1] == '-' || json_str[i+1] == '+'){
-                    exp_value.value.string[numberOfDigit] = json_str[i];
-                    numberOfDigit++;
-                }else{
-                    free(exp_value.value.string);
-                    exp_value = initJsonValue(JSON_ERROR);
-                    exp_value.value.string = "invalid exponent";
-                    return exp_value;
-                }
-            }else{
-                free(exp_value.value.string);
-                exp_value = initJsonValue(JSON_ERROR);
-                exp_value.value.string = "invalid exponent";
-                return exp_value;
-            }
-        }
-        else if(json_str[i] == ']' || json_str[i] == '}' || json_str[i] == ','){
-            break;
-        }
-        else{
+        }else{
             break;
         }
     }
+
     exp_value.value.string[numberOfDigit] = '\0';
 
     *position = *position + numberOfDigit;  
@@ -1584,12 +1411,6 @@ static JsonValue parseNUMBER(char* json_str,size_t* position){
 
     for(size_t index=*position;json_str[index] != '\0';index++){
         if((json_str[index] >= 48 && json_str[index] <= 57) || json_str[index] == '-'){
-            if(numberOfDigit >= BUFFER_DEFAULT_SIZE - 1){
-                nbr_value = initJsonValue(JSON_ERROR);
-                nbr_value.value.string = "number too long";
-                free(number_str);
-                return nbr_value;
-            }
             numberOfDigit ++;
             number_str[numberOfDigit-1] = json_str[index];
         }else{
@@ -1597,11 +1418,11 @@ static JsonValue parseNUMBER(char* json_str,size_t* position){
         }
     }
     number_str[numberOfDigit] = '\0';
-    state = _strtoi(number_str,&number_int);
+    state = bt_strtoi(number_str,&number_int);
     if(state == 1){
         // Trop long pour un long long -> on le garde en double (valeur approchée)
         double number_double;
-        if(_strtod(number_str, &number_double)){
+        if(bt_strtod(number_str, &number_double)){
             nbr_value.type = JSON_EXPONENTIAL;
             nbr_value.value.string = number_str;   // pas de free : la valeur garde le texte
             *position = *position + numberOfDigit;
@@ -1613,7 +1434,8 @@ static JsonValue parseNUMBER(char* json_str,size_t* position){
         nbr_value.value.integer = number_int;
     }
 
-    *position = *position + numberOfDigit;  
+    *position = *position + numberOfDigit;
+    stringToZero(number_str , BUFFER_DEFAULT_SIZE);
     free(number_str);
     return nbr_value;
 }
@@ -1636,9 +1458,9 @@ static JsonValue parseBOOL(char* json_str, size_t* position){
         return boo_value;   // rien avant le délimiteur (sinon indexEnd - 1 passerait sous 0)
     }
 
-    char* buffer = NULL;   // _strcpybxy alloue elle-même la bonne taille
+    char* buffer = NULL;   // bt_strcpybxy alloue elle-même la bonne taille
     
-    int state = _strcpybxy(&buffer, json_str, *position, indexEnd - 1);
+    int state = bt_strcpybxy(&buffer, json_str, *position, indexEnd - 1);
     if(state == 1){
         boo_value.value.string = "out of memory";
         free(buffer);
@@ -1646,10 +1468,10 @@ static JsonValue parseBOOL(char* json_str, size_t* position){
         return boo_value;
     }
     
-    if(_strcmp(buffer, "true") == 0){
+    if(bt_strcmp(buffer, "true") == 0){
         boo_value.type = JSON_BOOL;
         boo_value.value.integer = 1;
-    }else if(_strcmp(buffer, "false") == 0){
+    }else if(bt_strcmp(buffer, "false") == 0){
         boo_value.type = JSON_BOOL;
         boo_value.value.integer = 0;
     }
@@ -1673,15 +1495,15 @@ static JsonValue parseNULL(char* json_str,size_t* position){
         return null_value;
     }
 
-    char* buffer = NULL;   // _strcpybxy alloue elle-même la bonne taille
-    state = _strcpybxy(&buffer, json_str, *position, indexEnd - 1);
+    char* buffer = NULL;   // bt_strcpybxy alloue elle-même la bonne taille
+    state = bt_strcpybxy(&buffer, json_str, *position, indexEnd - 1);
     if(state == 1){
         null_value.value.string = "out of memory";
         *position = indexEnd;
         free(buffer);
         return null_value;
     }
-    if(_strcmp(buffer,"null") == 0){
+    if(bt_strcmp(buffer,"null") == 0){
         null_value.type = JSON_NULL;
         null_value.value.integer = 0;
     }
@@ -1710,13 +1532,7 @@ static JsonValue parseDECIMAL(char* json_str, size_t* position){
     for(size_t index = *position; json_str[index] != '\0'; index++){
         if((json_str[index] >= 48 && json_str[index] <= 57) ||
             json_str[index] == '-' || json_str[index] == '.'){
-            // Testé seulement quand il y a un caractère à ajouter, comme dans parseNUMBER
-            if(numberOfDigit >= BUFFER_DEFAULT_SIZE - 1){
-                dec_value = initJsonValue(JSON_ERROR);
-                dec_value.value.string = "number too long";
-                free(decimal_str);
-                return dec_value;
-            }
+
             numberOfDigit++;
             decimal_str[numberOfDigit-1] = json_str[index];
         }else{
@@ -1725,7 +1541,7 @@ static JsonValue parseDECIMAL(char* json_str, size_t* position){
     }
     decimal_str[numberOfDigit] = '\0';
     
-    state = _strtod(decimal_str, &decimal_double);
+    state = bt_strtod(decimal_str, &decimal_double);
     if(state == 1){
         dec_value.type = JSON_EXPONENTIAL;
         dec_value.value.string = decimal_str;   // pas de free : la valeur garde le texte
@@ -1735,6 +1551,7 @@ static JsonValue parseDECIMAL(char* json_str, size_t* position){
     
     dec_value.value.decimal = decimal_double;
     *position = *position + numberOfDigit;  
+    stringToZero(decimal_str , BUFFER_DEFAULT_SIZE);
     free(decimal_str);
     return dec_value;
 }
@@ -1778,7 +1595,7 @@ void freeValue(JsonValue value){
         break;
         case JSON_STRING:
         case JSON_EXPONENTIAL:{
-            stringToZero(value.value.string, _strlen(value.value.string));
+            stringToZero(value.value.string, bt_strlen(value.value.string));
             free(value.value.string);
         }
         break;
@@ -1799,31 +1616,11 @@ void freeObject(JsonObject *obj){
         return;
     }
     for(size_t i=0;i<obj->nbOfElement;i++){
-        stringToZero(obj->listeOfPair[i].key, _strlen(obj->listeOfPair[i].key));
+        stringToZero(obj->listeOfPair[i].key, bt_strlen(obj->listeOfPair[i].key));
         free(obj->listeOfPair[i].key);
-        switch(obj->listeOfPair[i].value.type){
-            case JSON_BOOL:
-            case JSON_DECIMAL:
-            case JSON_NULL:
-            case JSON_NUMBER:
-            case JSON_ERROR:
-            break;
-            case JSON_STRING:
-            case JSON_EXPONENTIAL:{
-                stringToZero(obj->listeOfPair[i].value.value.string, _strlen(obj->listeOfPair[i].value.value.string));
-                free(obj->listeOfPair[i].value.value.string);
-            }
-            break;
-            case JSON_OBJECT:{
-                freeObject(obj->listeOfPair[i].value.value.object);
-            }
-            break;
-            case JSON_ARRAY:{
-                freeArray(obj->listeOfPair[i].value.value.array);
-            }
-            break;
-        }
+        freeValue(obj->listeOfPair[i].value);
     }
+
     free(obj->listeOfPair);
     free(obj);
     debug("free obj\n");
@@ -1834,28 +1631,7 @@ void freeArray(JsonArray *ary){
         return;
     }
     for(size_t i = 0; i < ary->nbOfElement; i++){
-        switch(ary->listeOfValue[i].type){
-            case JSON_BOOL:
-            case JSON_DECIMAL:
-            case JSON_NULL:
-            case JSON_NUMBER:
-            case JSON_ERROR:
-            break;
-            case JSON_STRING:
-            case JSON_EXPONENTIAL:{
-                stringToZero(ary->listeOfValue[i].value.string, _strlen(ary->listeOfValue[i].value.string));
-                free(ary->listeOfValue[i].value.string);
-            }
-            break;
-            case JSON_OBJECT:{
-                freeObject(ary->listeOfValue[i].value.object);
-            }
-            break;
-            case JSON_ARRAY:{
-                freeArray(ary->listeOfValue[i].value.array);
-            }
-            break;
-        }
+        freeValue(ary->listeOfValue[i]);
     }
     free(ary->listeOfValue);
     free(ary);
@@ -1907,7 +1683,7 @@ int cpyValue(JsonValue* dest,JsonValue* src){
         break;
         case JSON_STRING :
             dest->value.string = NULL;
-            state = _strcpy(&dest->value.string,src->value.string);
+            state = bt_strcpy(&dest->value.string,src->value.string);
             if(state){
                 fprintf(stderr, "Error : copy of a string failed\n");
                 free(dest->value.string);
@@ -1959,7 +1735,7 @@ int cpyValue(JsonValue* dest,JsonValue* src){
         break;
         case JSON_EXPONENTIAL :
             dest->value.string = NULL;
-            state = _strcpy(&dest->value.string,src->value.string);
+            state = bt_strcpy(&dest->value.string,src->value.string);
             if(state){
                 fprintf(stderr, "Error : copy of an exponential number failed\n");
                 free(dest->value.string);
@@ -1995,7 +1771,7 @@ int cpyObject(JsonObject* dest,JsonObject* src){
     }else{
         if(dest->listeOfPair != NULL){
             for(size_t i = 0; i < dest->nbOfElement; i++){
-                stringToZero(dest->listeOfPair[i].key, _strlen(dest->listeOfPair[i].key));
+                stringToZero(dest->listeOfPair[i].key, bt_strlen(dest->listeOfPair[i].key));
                 free(dest->listeOfPair[i].key);
                 freeValue(dest->listeOfPair[i].value);
             }
@@ -2010,11 +1786,11 @@ int cpyObject(JsonObject* dest,JsonObject* src){
 
     dest->nbOfElement = src->nbOfElement;
     for(size_t i=0;i<dest->nbOfElement;i++){
-        state = _strcpy(&dest->listeOfPair[i].key,src->listeOfPair[i].key);
+        state = bt_strcpy(&dest->listeOfPair[i].key,src->listeOfPair[i].key);
         if(state){
             fprintf(stderr, "Error : copy of a key failed\n");
             for(size_t j = 0; j < i; j++){
-                stringToZero(dest->listeOfPair[j].key, _strlen(dest->listeOfPair[j].key));
+                stringToZero(dest->listeOfPair[j].key, bt_strlen(dest->listeOfPair[j].key));
                 free(dest->listeOfPair[j].key);
                 freeValue(dest->listeOfPair[j].value);
                 
@@ -2028,10 +1804,10 @@ int cpyObject(JsonObject* dest,JsonObject* src){
         state = cpyValue(&dest->listeOfPair[i].value,&src->listeOfPair[i].value);
         if(state){
             fprintf(stderr, "Error : copy of the value of a key failed\n");
-            stringToZero(dest->listeOfPair[i].key, _strlen(dest->listeOfPair[i].key));
+            stringToZero(dest->listeOfPair[i].key, bt_strlen(dest->listeOfPair[i].key));
             free(dest->listeOfPair[i].key);
             for(size_t j = 0; j < i; j++){
-                stringToZero(dest->listeOfPair[j].key, _strlen(dest->listeOfPair[j].key));
+                stringToZero(dest->listeOfPair[j].key, bt_strlen(dest->listeOfPair[j].key));
                 free(dest->listeOfPair[j].key);
                 freeValue(dest->listeOfPair[j].value);
                 dest->nbOfElement = 0;
@@ -2122,7 +1898,7 @@ static int loadJson(char** dest,FILE* file){
         return 1;
     }
     (*dest)[size] = '\0';
-    if((long)_strlen(*dest) < size){
+    if((long)bt_strlen(*dest) < size){
         stringToZero(*dest, (size_t)size);   // le texte après l'octet NUL peut contenir des mots de passe
         free(*dest);
         *dest = NULL;
@@ -2133,7 +1909,7 @@ static int loadJson(char** dest,FILE* file){
 
 // Retire les espaces hors des strings en une seule passe.
 // dest peut pointer sur src (nettoyage sur place) : indexWrite <= i, on n'écrase jamais un char pas encore lu.
-// Si *dest est NULL, un buffer de _strlen(src)+1 octets est alloué (le résultat n'est jamais plus long que src).
+// Si *dest est NULL, un buffer de bt_strlen(src)+1 octets est alloué (le résultat n'est jamais plus long que src).
 static int whitespaceCleaner(char* src,char** dest){
     size_t indexWrite = 0;
     int insideString = 0;
@@ -2142,7 +1918,7 @@ static int whitespaceCleaner(char* src,char** dest){
         return 1;
     }
     if(*dest == NULL){
-        *dest = (char*)malloc(_strlen(src) + 1);
+        *dest = (char*)malloc(bt_strlen(src) + 1);
         if(*dest == NULL){
             return 1;
         }
@@ -2268,7 +2044,7 @@ static int isEscaped(char* str, size_t position) {
 
 //////////////////////////////////////////// treatment function ////////////////////////////////////////////
 
-static size_t _strlen(char* str){
+static size_t bt_strlen(char* str){
     if(str == NULL){
         return -1;
     }
@@ -2279,31 +2055,34 @@ static size_t _strlen(char* str){
     return i;
 }
 
-// 0 -> Same | 1 -> Not the same
-static int _strcmp(char* str1,char* str2){
-    if(str1 == NULL){
-        if(str2 == NULL){
-            return 0;
-        }else{
-            return 1;
-        }
-    }
-    size_t size_1 = _strlen(str1);
-    size_t size_2 = _strlen(str2);
 
-    if(size_1 != size_2){
+static int bt_strcmp(char* str1,char* str2){
+    if(str1 == NULL && str2 == NULL){
+        return 0;
+    }else if(str1 == NULL && str2 != NULL){
+        return -1;
+    }else if(str1 != NULL && str2 == NULL){
         return 1;
     }
-    for(size_t i=0;i<size_1;i++){
-        if(str1[i] != str2[i]){
+
+    size_t size_1 = bt_strlen(str1);
+
+    for(size_t i=0;i <= size_1;i++){
+        unsigned char c1 = str1[i];
+        unsigned char c2 = str2[i];
+        if(c1 == c2){
+            continue;
+        }else if(c1 > c2){
             return 1;
+        }else if(c1 < c2){
+            return -1;
         }
     }
     return 0;
 }
 
 // String copy between x and y
-static int _strcpybxy(char **dest, char *src, size_t x, size_t y){
+static int bt_strcpybxy(char **dest, char *src, size_t x, size_t y){
     if(src == NULL){
         return 1;
     }
@@ -2335,11 +2114,11 @@ static int _strcpybxy(char **dest, char *src, size_t x, size_t y){
     return 0;
 }
 
-static int _strcpy(char** dest,char* src){
+static int bt_strcpy(char** dest,char* src){
     if(src == NULL){
         return 1;
     }
-    size_t size = _strlen(src) + 1;
+    size_t size = bt_strlen(src) + 1;
 
     // realloc dans tmp : s'il échoue, *dest garde l'ancien bloc (sinon il fuit)
     char* tmp;
@@ -2361,7 +2140,7 @@ static int _strcpy(char** dest,char* src){
 }
 
 // string echapement
-static int _strecp(char** dest,char* src){
+static int bt_strecp(char** dest,char* src){
     if(src == NULL || *dest != NULL){
         return 1;
     }
@@ -2441,7 +2220,7 @@ int unescapeString(char** dest,char* src){
     if(src == NULL || *dest != NULL){
         return 1;
     }
-    size_t size = _strlen(src) + 1;
+    size_t size = bt_strlen(src) + 1;
 
     // le texte décodé est toujours plus court ou égal : un seul malloc suffit
     *dest = malloc(size);
@@ -2492,15 +2271,62 @@ int unescapeString(char** dest,char* src){
                         }
                         accumulateur = accumulateur * 16 + pos;
                     }
-                    if(accumulateur == 0 || accumulateur >= 0x80){
+                    int longueur = 5;                    // 'u' + les 4 chiffres
+                    int erreur = (accumulateur == 0);    // \u0000 couperait la string en C
+
+                    // Au-delà de 0xFFFF (emojis...), le JSON écrit deux \u à la suite, une "paire" :
+                    // le 1er entre D800 et DBFF, le 2e entre DC00 et DFFF (😀 = \ud83d\ude00)
+                    if(accumulateur >= 0xD800 && accumulateur <= 0xDBFF){
+                        int second = 0;
+                        if(src[read+6] == '\\' && src[read+7] == 'u'){
+                            for(int i=0;i<4 && !erreur;i++){
+                                pos = getPosInHEXA_TAB(src[read+8+i]);
+                                if(pos == -1){
+                                    erreur = 1;   // '\0' compris : on ne lit jamais après la fin
+                                }else{
+                                    second = second * 16 + pos;
+                                }
+                            }
+                        }
+                        if(!erreur && second >= 0xDC00 && second <= 0xDFFF){
+                            // les 10 bits utiles de chaque moitié, mis bout à bout, + 0x10000
+                            accumulateur = 0x10000 + ((accumulateur - 0xD800) << 10) + (second - 0xDC00);
+                            longueur = 11;                // 'u' + 4 chiffres + '\' + 'u' + 4 chiffres
+                        }else{
+                            erreur = 1;                   // 1re moitié sans la 2e
+                        }
+                    }else if(accumulateur >= 0xDC00 && accumulateur <= 0xDFFF){
+                        erreur = 1;                       // 2e moitié sans la 1re
+                    }
+
+                    if(erreur){
                         stringToZero(*dest, write);
                         free(*dest);
                         *dest = NULL;
                         return 1;
                     }
-                    (*dest)[write] = accumulateur;
-                    write++;
-                    read += 5;  // saute 'u' + les 4 chiffres
+
+                    // Règle UTF-8 : un en-tête fixe par octet, les bits du numéro rangés dans les x
+                    if(accumulateur < 0x80){
+                        (*dest)[write] = accumulateur;                              // 0xxxxxxx
+                        write++;
+                    }else if(accumulateur < 0x800){
+                        (*dest)[write]   = 0xC0 | (accumulateur >> 6);              // 110xxxxx
+                        (*dest)[write+1] = 0x80 | (accumulateur & 0x3F);            // 10xxxxxx
+                        write += 2;
+                    }else if(accumulateur < 0x10000){
+                        (*dest)[write]   = 0xE0 | (accumulateur >> 12);             // 1110xxxx
+                        (*dest)[write+1] = 0x80 | ((accumulateur >> 6) & 0x3F);     // 10xxxxxx
+                        (*dest)[write+2] = 0x80 | (accumulateur & 0x3F);            // 10xxxxxx
+                        write += 3;
+                    }else{
+                        (*dest)[write]   = 0xF0 | (accumulateur >> 18);             // 11110xxx
+                        (*dest)[write+1] = 0x80 | ((accumulateur >> 12) & 0x3F);    // 10xxxxxx
+                        (*dest)[write+2] = 0x80 | ((accumulateur >> 6) & 0x3F);     // 10xxxxxx
+                        (*dest)[write+3] = 0x80 | (accumulateur & 0x3F);            // 10xxxxxx
+                        write += 4;
+                    }
+                    read += longueur;
                 break;
                 }
                 default:
@@ -2519,14 +2345,14 @@ int unescapeString(char** dest,char* src){
     return 0;
 }
 
-static int _strtoi(char* str,long long int* res){
+static int bt_strtoi(char* str,long long int* res){
     if(str == NULL){
         return 1;
     }
     long long int result = 0;
     int boolNeg = 0;
     size_t i = 0;
-    size_t len = _strlen(str);
+    size_t len = bt_strlen(str);
     if(len == 0) {
         return 1;
     }
@@ -2563,11 +2389,11 @@ static int _strtoi(char* str,long long int* res){
     return 0;
 }
 
-static int _strtod(char* str,double *res){
+static int bt_strtod(char* str,double *res){
     if(str == NULL){
         return 1;
     }
-    size_t sizeOfStr = _strlen(str);
+    size_t sizeOfStr = bt_strlen(str);
     if(sizeOfStr == (size_t)-1 || sizeOfStr == 0){
         return 1;
     }
@@ -2678,6 +2504,38 @@ static int getPosInHEXA_TAB(char c){
     // +10 car dans "0123456789abcdef" il y'a 0[...]9
 
     return -1;
+}
+
+static int bt_qsort(char** list,size_t size){
+    if(list == NULL){
+        return 1;
+    }else if(size <2){
+        return 0;
+    }
+
+    swap(&list[size/2], &list[size-1]);
+    char* pivot = list[size-1];
+    size_t i = 0;
+    for(size_t j=0;j<=size-2;j++){
+        if(bt_strcmp(list[j],pivot) < 0){
+            swap(&list[i],&list[j]);
+            i++;
+        }
+    }
+    swap(&list[i],&list[size-1]);
+    
+    // On sort la partie de droite
+    bt_qsort(list,i);
+    // On sort la partie de gauche
+    bt_qsort(list + i + 1,size - i - 1);
+
+    return 0;
+}
+
+static void swap(char** str1,char** str2){
+    char* buffer = *(str1);
+    *(str1) = *(str2);
+    *(str2) = buffer;
 }
 
 ////////////////////////////////////////////////////

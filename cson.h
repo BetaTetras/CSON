@@ -61,7 +61,13 @@ typedef struct JsonObject{
 
 // Lit et valide le fichier JSON `path`. Renvoie la valeur racine (à libérer avec freeValue),
 // ou un JSON_ERROR dont value.string explique la cause (un message détaillé est aussi écrit sur stderr).
-JsonValue initCson(char* path);
+JsonValue initCsonFromFile(char* path);
+
+// Pareil, mais depuis un texte JSON déjà en mémoire (par exemple un coffre déchiffré).
+// Attention : `json` est MODIFIÉ (les espaces hors des strings sont retirés), il doit donc être modifiable :
+// un tableau ou un bloc alloué, pas un texte écrit entre guillemets (initCson("{...}") plante).
+// initCson ne libère pas `json` et ne l'efface pas : c'est à l'appelant de le faire (stringToZero puis free).
+JsonValue initCson(char* json);
 
 // Valeur vide du type demandé, sans allocation. Pour un tableau ou un objet, utiliser plutôt newJsonArray / newJsonObject.
 JsonValue initJsonValue(JsonType type);
@@ -101,7 +107,8 @@ size_t getIndexFromObject(JsonObject* obj, char* key);
 
 // Décode une string stockée (forme JSON : \" \\ \n \u0041...) vers le texte réel, par exemple un mot de passe.
 // *dest doit valoir NULL : il reçoit une nouvelle chaîne, à effacer avec stringToZero puis libérer avec free.
-// Renvoie 1 si src est NULL ou mal formée, ou si un \uXXXX sort de 0x01..0x7F (non géré pour l'instant).
+// Les \uXXXX sont décodés en UTF-8 (é, €, et les emojis écrits en paire \ud83d\ude00).
+// Renvoie 1 si src est NULL ou mal formée, si elle contient \u0000, ou une moitié de paire seule (\uD800..\uDFFF).
 int unescapeString(char** dest, char* src);
 
 //////////////////////////////////////////// copie ////////////////////////////////////////////

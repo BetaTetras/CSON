@@ -1,0 +1,16 @@
+{
+    "nom": "Gregoire",
+    "age": 25,
+    "taille": 1.78,
+    "distance": 1.5e8,
+    "actif": true,
+    "fax": null,
+    "texte": "guillemet \" et retour\nà la ligne",
+    "notes": [12, 15.5, -3, true, null, "seize"],
+    "adresse": {
+        "ville": "Paris",
+        "code": 75000,
+        "tags": []
+    },
+    "vide": {}
+}
