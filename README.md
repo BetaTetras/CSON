@@ -2,7 +2,7 @@
 ![Badge Langage](https://img.shields.io/badge/Langage%20:-C-blue?style=plastic)
 ![Badge Licence](https://img.shields.io/badge/Licence%20:-MIT-darkblue?style=plastic)
 ![Badge Version](https://img.shields.io/badge/Version%20:-v2.0-lime?style=plastic)
-![Badge OS](https://img.shields.io/badge/OS%20:-LINUX-blue?style=plastic)
+![Badge OS](https://img.shields.io/badge/OS%20:-LINUX%20%7C%20WINDOWS-blue?style=plastic)
 ![Badge État](https://img.shields.io/badge/État%20%3A-Stable-green?style=plastic)
 
 **CSON** est une bibliothèque C pour lire, modifier et écrire du JSON
@@ -38,14 +38,14 @@
 | **Détection** des erreurs d'écriture (disque plein...)                           | `v1`        |
 | [🔩] *Technique*                                                                 |             |
 | **Aucune dépendance** : seulement `stdio.h`, `stdlib.h` et `stdint.h`            | `v1`        |
-| **C11 standard** : aucune fonction propre à Linux (compile en `-std=c11 -pedantic`) | `v2`     |
+| **Linux et Windows** : uniquement du C11 standard, testé sur les deux (locale française comprise) | `v2` |
 | **Gestion mémoire** complète, testée sous *valgrind* (aucune fuite)              | `v1`        |
 | **Messages d'erreur** explicites dans les `JSON_ERROR`                           | `v1`        |
 
 ## ⚙️ | Fonctionnement et déploiement
 ### Requis :
 - *Toute version* -  N'importe quel PC sous Linux (*gcc* et *make* conseillés)
-- *Windows* - Non testé, mais le code n'utilise que du C11 standard : prendre un compilateur récent (Visual Studio 2015 ou plus, MinGW-w64)
+- *v2* - Windows aussi, avec un compilateur récent (MinGW-w64 ou Visual Studio 2015 et plus) : voir [`test_windows/`](test_windows/) pour compiler et tester
 
 ### Compilation :
 ```sh

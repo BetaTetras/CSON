@@ -1,0 +1,21 @@
+{
+    "nom": "Gregoire",
+    "texte": "guillemet \" et retour\nà la ligne",
+    "mdp": "caf\u00e9 \u20ac \ud83d\ude00",
+    "mdpDirect": "café € 😀",
+    "age": 25,
+    "grand": 9223372036854775807,
+    "petit": -9223372036854775808,
+    "taille": 1.78,
+    "dixieme": 0.1,
+    "distance": 1.5e8,
+    "actif": true,
+    "fax": null,
+    "notes": [12, 15.5, -3, true, null, "seize"],
+    "adresse": {
+        "ville": "Paris",
+        "code": 75000,
+        "tags": []
+    },
+    "vide": {}
+}
