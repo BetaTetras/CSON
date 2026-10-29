@@ -21,8 +21,9 @@ static int isEscaped(char* str, size_t position);
 static char witchEscapeChar(char c);
 static char witchCharEscape(char c);
 static int getPosInHEXA_TAB(char c);
-static size_t findKey(JsonObject* obj, char* storedKey);
+static size_t findKey(JsonObject* obj, char* storedKey,size_t* sortedPos);
 static int bt_qsort(char** list,size_t size);
+static int bt_dichotomie(char** list, size_t size, char* key, size_t* pos,int* found);
 static void swap(char** str1,char** str2);
 
 // parsing (suppose un texte déjà validé par validateJson)
@@ -55,6 +56,14 @@ static void fprintfDouble(FILE* file, double d);
 static void fprintfValueDepth(FILE* file, int* depth, JsonValue value);
 static void fprintfObject(FILE* file, int* depth, JsonObject obj);
 static void fprintfArray(FILE* file, int* depth, JsonArray ary);
+
+// sprintf
+static void sprintfText(char* dest, size_t* pos, char* text);
+static void sprintfXtab(char* dest, size_t* pos, int x);
+static void sprintfDouble(char* dest, size_t* pos, double d);
+static void sprintfValueDepth(char* dest, size_t* pos, int* depth, JsonValue value);
+static void sprintfObject(char* dest, size_t* pos, int* depth, JsonObject obj);
+static void sprintfArray(char* dest, size_t* pos, int* depth, JsonArray ary);
 
 // _string.h
 static size_t bt_strlen(char* str);
@@ -342,6 +351,205 @@ static void fprintfArray(FILE* file, int* depth, JsonArray ary){
     fprintf(file,"]");
 }
 
+//////////////////////////////////////////// sprintf function ////////////////////////////////////////////
+
+// Même texte que fprintfValue, mais dans un nouveau bloc mémoire (voir cson.h).
+// Deux passages, comme bt_strecp : on compte les caractères, un seul malloc de la taille exacte, puis on écrit.
+// Pas de realloc : aucune copie partielle du texte (du coffre) ne reste dans un bloc libéré.
+int sprintfValue(char** dest, JsonValue value){
+    if(dest == NULL || *dest != NULL){
+        fprintf(stderr, "Error : cannot write the value (dest is NULL, or *dest is not NULL)\n");
+        return 1;
+    }
+
+    // 1er passage : dest à NULL, on compte seulement
+    size_t size = 0;
+    int depth = 0;
+    sprintfValueDepth(NULL, &size, &depth, value);
+
+    *dest = (char*)malloc(size + 1);
+    if(*dest == NULL){
+        fprintf(stderr, "Error : allocation failed while writing the value\n");
+        return 1;
+    }
+
+    // 2e passage : le même texte, écrit dans le bloc
+    size_t pos = 0;
+    depth = 0;
+    sprintfValueDepth(*dest, &pos, &depth, value);
+    (*dest)[pos] = '\0';
+    return 0;
+}
+
+// Équivalent de fprintf(file, "%s", text) : recopie text dans dest à partir de *pos, puis avance *pos.
+// Si dest vaut NULL, rien n'est recopié mais *pos avance quand même : c'est comme ça que le 1er passage compte.
+// Pas de test de taille : le bloc a été alloué avec exactement le nombre de caractères compté au 1er passage.
+static void sprintfText(char* dest, size_t* pos, char* text){
+    size_t len = bt_strlen(text);
+    if(dest != NULL){
+        for(size_t i = 0; i < len; i++){
+            dest[*pos + i] = text[i];
+        }
+    }
+    *pos += len;
+}
+
+static void sprintfXtab(char* dest, size_t* pos, int x){
+    for(int i=0;i<x;i++){
+        sprintfText(dest,pos,"  ");
+    }
+}
+
+static void sprintfDouble(char* dest, size_t* pos, double d){
+    char buffer[BUFFER_DEFAULT_SIZE];
+    if(d-d != 0.0){
+        sprintfText(dest, pos, "\"Error : NaN or infinity is not allowed\"");
+        return;
+    }
+    char point = localeDecimalPoint();
+    double check;
+    int found = 0;
+    for(int precision = 1; precision <= 60 && !found; precision++){
+        int len = snprintf(buffer, sizeof(buffer), "%.*f", precision, d);
+        if(len >= (int)sizeof(buffer)){
+            break;   // trop long : ajouter des chiffres ne fera que l'allonger
+        }
+        // snprintf suit la locale (',' en français) : le JSON et bt_strtod veulent un '.'
+        for(int i = 0; buffer[i] != '\0'; i++){
+            if(buffer[i] == point){
+                buffer[i] = '.';
+            }
+        }
+        if(bt_strtod(buffer, &check) == 0 && check == d){
+            found = 1;
+        }
+    }
+    if(!found){
+        // Trop précis pour bt_strtod (0.1 + 0.2, 1e300...) : 17 chiffres, sera relu en texte
+        snprintf(buffer, sizeof(buffer), "%.17g", d);
+        for(int i = 0; buffer[i] != '\0'; i++){
+            if(buffer[i] == point){
+                buffer[i] = '.';
+            }
+        }
+    }
+    sprintfText(dest, pos, buffer);
+}
+
+static void sprintfValueDepth(char* dest, size_t* pos, int* depth, JsonValue value){
+    switch(value.type){
+        case JSON_ARRAY:
+            if(value.value.array == NULL){
+                sprintfText(dest,pos,"null");   // tableau jamais alloué (initJsonValue seul) : rien à lire
+            }else{
+                sprintfArray(dest,pos,depth,*value.value.array);
+            }
+        break;
+        case JSON_BOOL:{
+            if(value.value.integer == 1){
+                sprintfText(dest,pos,"true");
+            }else if(value.value.integer == 0){
+                sprintfText(dest,pos,"false");
+            }else{
+                sprintfText(dest,pos,"\"Boolean error\"");
+            }
+            break;
+        }
+        
+        case JSON_DECIMAL:
+            sprintfDouble(dest,pos,value.value.decimal);
+        break;
+        case JSON_ERROR:
+            if(value.value.string == NULL){
+                sprintfText(dest,pos,"\"error...\"");
+            }else{
+                sprintfText(dest,pos,"\"error : ");
+                sprintfText(dest,pos,value.value.string);
+                sprintfText(dest,pos,"\"");
+            }
+        break;
+        case JSON_EXPONENTIAL:
+            if(value.value.string == NULL){
+                sprintfText(dest,pos,"null");
+            }else{
+                sprintfText(dest,pos,value.value.string);
+            }
+        break;
+
+        case JSON_NULL:
+            sprintfText(dest,pos,"null");
+        break;
+        case JSON_NUMBER:{
+            char number[32];   // un long long tient en 20 caractères
+            snprintf(number, sizeof(number), "%lld", value.value.integer);
+            sprintfText(dest,pos,number);
+        }
+        break;
+        case JSON_OBJECT:
+            if(value.value.object == NULL){
+                sprintfText(dest,pos,"null");
+            }else{
+                sprintfObject(dest,pos,depth,*value.value.object);
+            }
+        break;
+        case JSON_STRING:{
+            if(value.value.string == NULL){
+                sprintfText(dest,pos,"null");
+            }else{
+                sprintfText(dest,pos,"\"");
+                sprintfText(dest,pos,value.value.string);
+                sprintfText(dest,pos,"\"");
+            }
+            break;
+        }
+        default:
+            sprintfText(dest,pos,"\"error : unknown type\"");
+    }
+}
+
+static void sprintfObject(char* dest, size_t* pos, int* depth, JsonObject obj){
+    size_t numberOfOBJ = (size_t)obj.nbOfElement;
+    // Objet vide : "{}" sur une seule ligne, comme le tableau vide "[]"
+    if(obj.nbOfElement == 0) {
+        sprintfText(dest,pos,"{}");
+        return;
+    }
+    sprintfText(dest,pos,"{\n");
+    (*depth)++;
+    for(size_t i=0;i<numberOfOBJ;i++){
+        
+        sprintfXtab(dest,pos,*depth);
+        sprintfText(dest,pos,"\"");
+        sprintfText(dest,pos,obj.listeOfPair[i].key);
+        sprintfText(dest,pos,"\": ");
+        sprintfValueDepth(dest, pos, depth, obj.listeOfPair[i].value);
+        if(i < obj.nbOfElement - 1) {
+            sprintfText(dest,pos,",");
+        }
+        sprintfText(dest,pos,"\n");
+    }
+    (*depth)--;
+
+    sprintfXtab(dest,pos,*depth);
+    sprintfText(dest,pos,"}");   // pas de \n : c'est le parent qui écrit la ',' puis le retour à la ligne
+}
+
+static void sprintfArray(char* dest, size_t* pos, int* depth, JsonArray ary){
+    size_t numberOfElement = (size_t)ary.nbOfElement;
+    sprintfText(dest,pos,"[");
+    if(ary.nbOfElement == 0) {
+        sprintfText(dest,pos,"]");
+        return;
+    }
+    for(size_t i=0;i<numberOfElement;i++){
+        sprintfValueDepth(dest, pos, depth, ary.listeOfValue[i]);
+        if(i < ary.nbOfElement - 1) {
+            sprintfText(dest,pos,",");
+        }
+    }
+    sprintfText(dest,pos,"]");
+}
+
 //////////////////////////////////////////// new function ////////////////////////////////////////////
 
 int newJsonObject(JsonValue* dest){
@@ -359,6 +567,7 @@ int newJsonObject(JsonValue* dest){
     }
     dest->value.object->nbOfElement = 0;
     dest->value.object->listeOfPair = NULL;
+    dest->value.object->listeOfSortedKey = NULL;
 
     return 0;
 }
@@ -518,7 +727,8 @@ int addToObject(JsonObject* obj, char* key, JsonValue value,size_t index){
         return 1;
     }
 
-    if(findKey(obj,cpy_key) != (size_t)-1){
+    size_t sortedPos;
+    if(findKey(obj,cpy_key,&sortedPos) != (size_t)-1){
         fprintf(stderr, "Error : cannot add to the object (the key already exists)\n");
         stringToZero(cpy_key, bt_strlen(cpy_key));
         free(cpy_key);
@@ -542,6 +752,15 @@ int addToObject(JsonObject* obj, char* key, JsonValue value,size_t index){
         return 1;
     }
     obj->listeOfPair = newListe;
+    char** newSorted = (char**)realloc(obj->listeOfSortedKey, (obj->nbOfElement + 1) * sizeof(char*));
+    if(newSorted == NULL){
+        fprintf(stderr, "Error : allocation failed while adding to the object\n");
+        stringToZero(cpy_key, bt_strlen(cpy_key));
+        free(cpy_key);
+        freeValue(cpy_value);
+        return 1;
+    }
+    obj->listeOfSortedKey = newSorted;
 
     for(size_t i = obj->nbOfElement; i > index; i--){
         newListe[i] = newListe[i-1];
@@ -549,6 +768,10 @@ int addToObject(JsonObject* obj, char* key, JsonValue value,size_t index){
 
     newListe[index].key = cpy_key;
     newListe[index].value = cpy_value;
+    for(size_t i = obj->nbOfElement; i > sortedPos; i--){
+        obj->listeOfSortedKey[i] = obj->listeOfSortedKey[i-1];
+    }
+    obj->listeOfSortedKey[sortedPos] = cpy_key;
     obj->nbOfElement++;
 
     return 0;
@@ -591,6 +814,15 @@ int removeToObject(JsonObject* obj, size_t index){
         return 1;
     }
 
+    size_t pos;
+    int found = 0;
+    bt_dichotomie(obj->listeOfSortedKey, obj->nbOfElement, obj->listeOfPair[index].key, &pos, &found);
+    if(found){
+        for(size_t i = pos; i < obj->nbOfElement - 1; i++){
+            obj->listeOfSortedKey[i] = obj->listeOfSortedKey[i + 1];
+        }
+    }
+
     stringToZero(obj->listeOfPair[index].key, bt_strlen(obj->listeOfPair[index].key));
     free(obj->listeOfPair[index].key);
     freeValue(obj->listeOfPair[index].value);
@@ -603,11 +835,17 @@ int removeToObject(JsonObject* obj, size_t index){
 
     if(obj->nbOfElement == 0){
         free(obj->listeOfPair);
+        free(obj->listeOfSortedKey);
         obj->listeOfPair = NULL;
+        obj->listeOfSortedKey = NULL;
     }else{
         JsonPair* newListe = (JsonPair*)realloc(obj->listeOfPair, obj->nbOfElement * sizeof(JsonPair));
         if(newListe != NULL){
             obj->listeOfPair = newListe;
+        }
+        char** tmp = realloc(obj->listeOfSortedKey,obj->nbOfElement * sizeof(char*));
+        if(tmp != NULL){    
+            obj->listeOfSortedKey = tmp;
         }
     }
 
@@ -656,7 +894,8 @@ int modifyObject(JsonObject* obj,JsonPair paire,size_t index){
         return 1;
     }
 
-    size_t isFound = findKey(obj,newPair.key);
+    size_t sortedPos;
+    size_t isFound = findKey(obj,newPair.key,&sortedPos);
     if(isFound != (size_t)-1 && isFound != index){
         fprintf(stderr, "Error : cannot modify the object (the key already exists at another index)\n");
         stringToZero(newPair.key, bt_strlen(newPair.key));
@@ -670,6 +909,21 @@ int modifyObject(JsonObject* obj,JsonPair paire,size_t index){
         free(newPair.key);
         return 1;
     }
+
+    int found = 0;
+    size_t pos;
+    bt_dichotomie(obj->listeOfSortedKey, obj->nbOfElement, obj->listeOfPair[index].key, &pos, &found);
+    if(found){
+        for(size_t i = pos; i < obj->nbOfElement - 1; i++){
+            obj->listeOfSortedKey[i] = obj->listeOfSortedKey[i + 1];
+        }
+    }
+
+    bt_dichotomie(obj->listeOfSortedKey, obj->nbOfElement - 1, newPair.key, &pos, &found);
+    for(size_t i = obj->nbOfElement - 1; i > pos; i--){
+        obj->listeOfSortedKey[i] = obj->listeOfSortedKey[i-1];
+    }
+    obj->listeOfSortedKey[pos] = newPair.key;
 
     stringToZero(obj->listeOfPair[index].key, bt_strlen(obj->listeOfPair[index].key));
     free(obj->listeOfPair[index].key);
@@ -718,7 +972,8 @@ size_t getIndexFromObject(JsonObject* obj,char* key){
         fprintf(stderr, "Error : cannot search the key (key is NULL or out of memory)\n");
         return (size_t)-1;
     }
-    size_t index = findKey(obj,cpy_key);
+    size_t sortedPos;
+    size_t index = findKey(obj,cpy_key,&sortedPos);
     stringToZero(cpy_key, bt_strlen(cpy_key));
     free(cpy_key);
 
@@ -727,13 +982,19 @@ size_t getIndexFromObject(JsonObject* obj,char* key){
 
 // Cherche une clé déjà échappée (forme stockée).
 // Pour addToObject / modifyObject, qui ont déjà échappé leur clé : passer par getIndexFromObject l'échapperait deux fois.
-static size_t findKey(JsonObject* obj, char* storedKey){
-    for(size_t i=0;i<obj->nbOfElement;i++){
-        if(bt_strcmp(obj->listeOfPair[i].key,storedKey) == 0){
-            return i;
+static size_t findKey(JsonObject* obj, char* storedKey, size_t* sortedPos){
+    int found = 0;   // reste à 0 si bt_dichotomie s'arrête sur une erreur
+    bt_dichotomie(obj->listeOfSortedKey, obj->nbOfElement, storedKey, sortedPos, &found);
+
+    if(!found){
+        return (size_t)-1;
+    }else{
+        for(size_t i=0;i<obj->nbOfElement;i++){
+            if(obj->listeOfPair[i].key == obj->listeOfSortedKey[*sortedPos]){
+                return i;
+            }
         }
     }
-
     return (size_t)-1;
 }
 
@@ -1054,6 +1315,7 @@ static JsonValue parseOBJ(char* json_str, size_t* position){
         obj_value.value.string = "out of memory";
         return obj_value;
     }
+    obj_value.value.object->listeOfSortedKey = NULL;
     obj_value.value.object->nbOfElement = 0;
     obj_value.value.object->listeOfPair = (JsonPair*)calloc(10, sizeof(JsonPair));
     if(obj_value.value.object->listeOfPair == NULL){
@@ -1178,7 +1440,7 @@ static JsonValue parseOBJ(char* json_str, size_t* position){
     obj_value.value.object->nbOfElement = NumberOfElement;
 
     int doublons = 0;
-    if(NumberOfElement >= 2){
+    if(NumberOfElement >= 1){
         char** cles = (char**)malloc(NumberOfElement * sizeof(char*));
         if(cles == NULL){
             freeObject(obj_value.value.object);
@@ -1196,7 +1458,8 @@ static JsonValue parseOBJ(char* json_str, size_t* position){
                 break;
             }
         }
-        free(cles);
+        // On donne la liste sorted par qsort a la liste d'adr triée de l'obj JsonObject
+        obj_value.value.object->listeOfSortedKey = cles;
     }
 
     if(doublons == 1){
@@ -1622,6 +1885,7 @@ void freeObject(JsonObject *obj){
     }
 
     free(obj->listeOfPair);
+    free(obj->listeOfSortedKey);
     free(obj);
     debug("free obj\n");
 }
@@ -1720,6 +1984,7 @@ int cpyValue(JsonValue* dest,JsonValue* src){
             }
             dest->value.object->nbOfElement = 0;
             dest->value.object->listeOfPair = NULL;
+            dest->value.object->listeOfSortedKey = NULL;
 
             state = cpyObject(dest->value.object,src->value.object);
             if(state){
@@ -1777,6 +2042,9 @@ int cpyObject(JsonObject* dest,JsonObject* src){
             }
             free(dest->listeOfPair);
             dest->listeOfPair = NULL;
+            free(dest->listeOfSortedKey);
+            dest->listeOfSortedKey = NULL;
+
         }
         dest->listeOfPair = (JsonPair*)calloc(src->nbOfElement, sizeof(JsonPair));
         if(dest->listeOfPair == NULL && src->nbOfElement > 0){
@@ -1818,6 +2086,29 @@ int cpyObject(JsonObject* dest,JsonObject* src){
             return 1;
         }
     }
+
+    if(dest->nbOfElement > 0){
+        char** cles = (char**)malloc(dest->nbOfElement * sizeof(char*));
+        if(cles == NULL){
+            fprintf(stderr, "Error : copy of the value of a key failed (sorted list)\n");
+            for(size_t j = 0; j < dest->nbOfElement; j++){
+                stringToZero(dest->listeOfPair[j].key, bt_strlen(dest->listeOfPair[j].key));
+                free(dest->listeOfPair[j].key);
+                freeValue(dest->listeOfPair[j].value);
+            }
+            free(dest->listeOfPair);
+            dest->listeOfPair = NULL;
+            dest->nbOfElement = 0;
+            return 1;
+        }
+        for(size_t i=0;i<dest->nbOfElement;i++){
+            cles[i] = dest->listeOfPair[i].key;
+        }
+        bt_qsort(cles, dest->nbOfElement);
+        dest->listeOfSortedKey = cles;
+    }
+
+
     return 0;
 }
 
@@ -2529,6 +2820,35 @@ static int bt_qsort(char** list,size_t size){
     // On sort la partie de gauche
     bt_qsort(list + i + 1,size - i - 1);
 
+    return 0;
+}
+
+static int bt_dichotomie(char** list, size_t size, char* key, size_t* pos,int* found){
+    if((list == NULL && size > 0) || key == NULL || pos == NULL || found == NULL){
+        return 1;
+    }
+    size_t bas = 0;
+    size_t haut = size;
+    size_t milieu;
+    int state;
+
+    while(bas < haut){
+        milieu = bas + (haut - bas) / 2;
+        state = bt_strcmp(key, list[milieu]);
+
+        if(state == 0){
+            *pos = milieu;
+            *found = 1;
+            return 0;
+        }else if(state < 0){
+            haut = milieu;
+        }else{
+            bas = milieu + 1;
+        }
+    }
+
+    *pos = bas;
+    *found = 0;
     return 0;
 }
 

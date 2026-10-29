@@ -55,6 +55,7 @@ typedef struct JsonArray{
 typedef struct JsonObject{
     size_t nbOfElement;
     JsonPair * listeOfPair;
+    char** listeOfSortedKey;
 }JsonObject;
 
 //////////////////////////////////////////// lecture ////////////////////////////////////////////
@@ -124,6 +125,11 @@ void printfValue(JsonValue value);              // affiche à l'écran (sans ret
 int fprintfValue(FILE* file, JsonValue value);  // écrit dans file. Renvoie 1 si l'écriture a échoué (disque plein...)
 // Texte sensible : faire setvbuf(file, NULL, _IONBF, 0) juste après fopen, sinon stdio en garde une copie
 // dans un tampon que fclose libère sans l'effacer.
+
+// Même texte que fprintfValue, mais dans un bloc mémoire (pour chiffrer un coffre sans l'écrire en clair sur le disque).
+// *dest doit valoir NULL : il reçoit un nouveau texte, alloué en une seule fois à la taille exacte (aucune copie laissée
+// en mémoire). À effacer avec stringToZero puis libérer avec free. Renvoie 1 si dest est NULL, *dest pas NULL, ou mémoire pleine.
+int sprintfValue(char** dest, JsonValue value);
 
 //////////////////////////////////////////// libération ////////////////////////////////////////////
 
