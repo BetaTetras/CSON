@@ -153,7 +153,7 @@ int main(void){
     paire.value = s;
     verifier(modifyObject(o.value.object, paire, 0) == 0, "site remplace par login");
     verifier(getValueFromObject(o.value.object, "site") == NULL && getValueFromObject(o.value.object, "login") != NULL, "recherche apres modification");
-    verifier(removeToObject(o.value.object, 1) == 0 && getValueFromObject(o.value.object, "mdp") == NULL, "suppression de mdp");
+    verifier(removeFromObject(o.value.object, 1) == 0 && getValueFromObject(o.value.object, "mdp") == NULL, "suppression de mdp");
     verifier(decodeEn(getValueFromObject(o.value.object, "login"), "p\"ss\\w0rd"), "echappement automatique puis decodage");
     JsonValue copie;
     verifier(cpyValue(&copie, &o) == 0 && getValueFromObject(copie.value.object, "login") != NULL, "copie complete, recherche dans la copie");

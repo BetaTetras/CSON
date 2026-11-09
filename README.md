@@ -142,8 +142,8 @@ Les fonctions qui renvoient un `int` renvoient **0 si tout va bien** et **1 en c
   addToObject(obj, "cle", v, obj->nbOfElement);
   freeValue(v);   // l'objet a sa propre copie
   ```
-- Un objet doit être créé avec `newJsonObject()` (ou lu avec `initCson...()`), et ses clés ne doivent être changées qu'avec `addToObject()`, `removeToObject()` ou `modifyObject()` : sinon sa liste triée n'est plus à jour.
-- Le pointeur renvoyé par `getValueFromObject()` pointe **à l'intérieur** de l'objet : il n'est plus valable après un `addToObject()` ou un `removeToObject()`, et il ne faut jamais le libérer.
+- Un objet doit être créé avec `newJsonObject()` (ou lu avec `initCson...()`), et ses clés ne doivent être changées qu'avec `addToObject()`, `removeFromObject()` ou `modifyObject()` : sinon sa liste triée n'est plus à jour.
+- Le pointeur renvoyé par `getValueFromObject()` pointe **à l'intérieur** de l'objet : il n'est plus valable après un `addToObject()` ou un `removeFromObject()`, et il ne faut jamais le libérer.
 - Le message d'un `JSON_ERROR` est un texte constant : il ne faut **jamais** le libérer.
 
 ## ⚠️ | À savoir

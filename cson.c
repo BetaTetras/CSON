@@ -811,7 +811,7 @@ int addToArray(JsonArray* ary, JsonValue value, size_t index){
 
 //////////////////////////////////////////// remove function ////////////////////////////////////////////
 
-int removeToObject(JsonObject* obj, size_t index){
+int removeFromObject(JsonObject* obj, size_t index){
     if(obj == NULL || index >= obj->nbOfElement){
         fprintf(stderr, "Error : cannot remove from the object (obj is NULL or index out of range)\n");
         return 1;
@@ -855,7 +855,7 @@ int removeToObject(JsonObject* obj, size_t index){
     return 0;
 }
 
-int removeToArray(JsonArray* ary, size_t index){
+int removeFromArray(JsonArray* ary, size_t index){
     if(ary == NULL || index >= ary->nbOfElement){
         fprintf(stderr, "Error : cannot remove from the array (ary is NULL or index out of range)\n");
         return 1;

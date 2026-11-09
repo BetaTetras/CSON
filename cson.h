@@ -91,8 +91,8 @@ int newJsonExponencial(JsonValue* dest, char* exp);    // texte d'un nombre JSON
 
 int addToObject(JsonObject* obj, char* key, JsonValue value, size_t index);  // insère à index (0..nbOfElement), clé déjà présente refusée
 int addToArray(JsonArray* ary, JsonValue value, size_t index);               // insère à index (0..nbOfElement)
-int removeToObject(JsonObject* obj, size_t index);                           // supprime et libère la paire à index
-int removeToArray(JsonArray* ary, size_t index);                             // supprime et libère la valeur à index
+int removeFromObject(JsonObject* obj, size_t index);                           // supprime et libère la paire à index
+int removeFromArray(JsonArray* ary, size_t index);                             // supprime et libère la valeur à index
 int modifyObject(JsonObject* obj, JsonPair paire, size_t index);             // remplace la paire à index (clé déjà présente ailleurs refusée)
 int modifyArray(JsonArray* ary, JsonValue value, size_t index);              // remplace la valeur à index
 
