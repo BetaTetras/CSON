@@ -12,7 +12,7 @@ int main(){
         return 1;
     }
 
-    size_t indexChercher = getIndexFromObject(f.value.object,"nom");
+    size_t indexChercher = getIndexFromObjectWithKey(f.value.object,"nom");
     printf("Le nom est = %s\n",f.value.object->listeOfPair[indexChercher].value.value.string);
 
 

@@ -1,7 +1,7 @@
 # 📦 | CSON
 ![Badge Langage](https://img.shields.io/badge/Langage%20:-C-blue?style=plastic)
 ![Badge Licence](https://img.shields.io/badge/Licence%20:-MIT-darkblue?style=plastic)
-![Badge Version](https://img.shields.io/badge/Version%20:-v2.0-lime?style=plastic)
+![Badge Version](https://img.shields.io/badge/Version%20:-v2.1-lime?style=plastic)
 ![Badge OS](https://img.shields.io/badge/OS%20:-LINUX%20%7C%20WINDOWS-blue?style=plastic)
 ![Badge État](https://img.shields.io/badge/État%20%3A-Stable-green?style=plastic)
 
@@ -24,7 +24,9 @@
 | **Création** de valeurs avec `newJsonObject()`, `newJsonString()`...             | `v1`        |
 | **Ajout / suppression / modification** avec `addTo...()`, `removeTo...()`, `modify...()` | `v1` |
 | **Ajout et recherche rapides** : clés rangées dans une liste triée, recherche par dichotomie (40 000 `addToObject()` en 0,24 s au lieu de 22 s) | `v2` |
-| **Recherche** d'une clé avec `getValueFromObject()` / `getIndexFromObject()`     | `v1`        |
+| **Recherche** d'une clé avec `getValueFromObject()` / `getIndexFromObjectWithKey()` (appelée `getIndexFromObject()` jusqu'à la v2.0) | `v1` |
+| **Recherche par valeur** avec `getIndexFromArray()` / `getIndexFromObjectWithValue()` | `v2.1`  |
+| **Comparaison complète** de deux valeurs avec `isEqualValue()`, tableaux et objets imbriqués compris | `v2.1` |
 | **Copie complète** d'une valeur avec `cpyValue()`                                | `v1`        |
 | **Échappement automatique** des strings et des clés (`"` `\` `\n`...), décodage avec `unescapeString()` | `v1.1` |
 | **Décodage complet des `\uXXXX`** par `unescapeString()` : accents, `€`, emojis (`\ud83d\ude00`) | `v2` |
@@ -50,6 +52,8 @@
 ### Compilation :
 ```sh
 make            # construit la bibliothèque libcson.a
+make test       # lance les tests (ceux de test_windows/, qui marchent aussi sous Linux)
+make valgrind   # pareil, sous valgrind (fuites et erreurs mémoire)
 make clean      # supprime tout ce qui a été compilé
 ```
 
@@ -125,7 +129,7 @@ Toute valeur est une `JsonValue` : un **type** et un **contenu**. Il faut toujou
 
 Un `JsonObject` contient aussi `listeOfSortedKey` : un champ **interne** (les clés rangées par ordre alphabétique, pour les retrouver vite), à ne jamais lire ni modifier soi-même.
 
-Les fonctions qui renvoient un `int` renvoient **0 si tout va bien** et **1 en cas d'erreur**.
+Les fonctions qui renvoient un `int` renvoient **0 si tout va bien** et **1 en cas d'erreur**. Seule exception : `isEqualValue()`, `isEqualObject()` et `isEqualArray()` renvoient **1 si les valeurs sont égales** et **0 sinon**.
 
 ## 🧠 | Gestion de la mémoire
 - Une valeur renvoyée par `initCsonFromFile()`, `initCson()` ou par un `newJson...()` doit être libérée avec `freeValue()`.
@@ -143,10 +147,11 @@ Les fonctions qui renvoient un `int` renvoient **0 si tout va bien** et **1 en c
 - Le message d'un `JSON_ERROR` est un texte constant : il ne faut **jamais** le libérer.
 
 ## ⚠️ | À savoir
-- **Les strings sont gardées au format JSON**, échappements compris (`"a\nb"` reste `a`, `\`, `n`, `b`), et réécrites à l'identique. `newJsonString()`, `addToObject()` et `modifyObject()` échappent automatiquement le texte donné (`p"ss` est stocké `p\"ss`). Pour récupérer le vrai texte (un mot de passe par exemple), utiliser `unescapeString()`, puis l'effacer avec `stringToZero()` avant de le libérer. Pour écrire un fichier sensible avec `fprintfValue()`, appeler `setvbuf(file, NULL, _IONBF, 0)` juste après le `fopen()` : sinon `stdio` garde une copie du texte dans un tampon que `fclose()` libère sans l'effacer (ou utiliser `sprintfValue()`, qui n'a pas ce problème). `getValueFromObject()` et `getIndexFromObject()` prennent aussi le texte normal de la clé.
+- **Les strings sont gardées au format JSON**, échappements compris (`"a\nb"` reste `a`, `\`, `n`, `b`), et réécrites à l'identique. `newJsonString()`, `addToObject()` et `modifyObject()` échappent automatiquement le texte donné (`p"ss` est stocké `p\"ss`). Pour récupérer le vrai texte (un mot de passe par exemple), utiliser `unescapeString()`, puis l'effacer avec `stringToZero()` avant de le libérer. Pour écrire un fichier sensible avec `fprintfValue()`, appeler `setvbuf(file, NULL, _IONBF, 0)` juste après le `fopen()` : sinon `stdio` garde une copie du texte dans un tampon que `fclose()` libère sans l'effacer (ou utiliser `sprintfValue()`, qui n'a pas ce problème). `getValueFromObject()` et `getIndexFromObjectWithKey()` prennent aussi le texte normal de la clé.
 - **`\uXXXX`** : `unescapeString()` décode tous les caractères Unicode en UTF-8 (`\u00e9` → `é`, `\u20ac` → `€`, `\ud83d\ude00` → 😀), comme les écrit Python par exemple. Seuls `\u0000` (il couperait la string en C) et une moitié de paire seule (`\ud83d` sans sa suite) sont refusés.
 - **Nombres** : 63 caractères au maximum. Un entier trop grand pour un `long long`, ou un nombre de plus de 15 chiffres significatifs, est gardé **en texte** (`JSON_EXPONENTIAL`), sans aucune perte. `-0` est lu comme `0`, et `NaN` / l'infini sont refusés (ils n'existent pas en JSON).
 - **Erreurs** : en plus du message dans le `JSON_ERROR`, `initCsonFromFile()` écrit sur `stderr` la ligne et la colonne du problème (`Error : invalid JSON at line 3, column 11`).
+- **Comparaison** : `isEqualValue()` compare ce qui est stocké, pas le sens. L'ordre des clés compte (`{"a":1,"b":2}` ≠ `{"b":2,"a":1}`), `1` ≠ `1.0` (types différents), et les strings sont comparées sous leur forme JSON (`"\u0041"` ≠ `"A"`). Pratique pour vérifier qu'un fichier écrit puis relu redonne exactement la même valeur.
 - **Imbrication** : 512 niveaux de `{` et `[` au maximum.
 
 ## ⏱️ | Performances (v1.1 → v2)

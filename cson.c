@@ -9,6 +9,8 @@
 #define JSON_MAX_DEPTH 512
 #define HEXA_TAB "0123456789abcdef"
 
+#define VERSION 2.1
+
 // Les types et les fonctions publiques sont dans cson.h.
 // Tout ce qui suit est interne : "static" les rend invisibles en dehors de ce fichier.
 
@@ -25,6 +27,7 @@ static size_t findKey(JsonObject* obj, char* storedKey,size_t* sortedPos);
 static int bt_qsort(char** list,size_t size);
 static int bt_dichotomie(char** list, size_t size, char* key, size_t* pos,int* found);
 static void swap(char** str1,char** str2);
+
 
 // parsing (suppose un texte déjà validé par validateJson)
 static JsonValue parseOBJ(char* json_str, size_t* position);
@@ -953,7 +956,7 @@ int modifyArray(JsonArray* ary, JsonValue value, size_t index){
 //////////////////////////////////////////// get function ////////////////////////////////////////////
 
 JsonValue* getValueFromObject(JsonObject* obj,char* key){
-    size_t index = getIndexFromObject(obj,key);
+    size_t index = getIndexFromObjectWithKey(obj,key);
     if(index == (size_t)-1){
         return NULL;
     }
@@ -961,7 +964,7 @@ JsonValue* getValueFromObject(JsonObject* obj,char* key){
     return &obj->listeOfPair[index].value;
 }
 
-size_t getIndexFromObject(JsonObject* obj,char* key){
+size_t getIndexFromObjectWithKey(JsonObject* obj,char* key){
     if(obj == NULL){
         return (size_t)-1;
     }
@@ -980,8 +983,34 @@ size_t getIndexFromObject(JsonObject* obj,char* key){
     return index;
 }
 
+size_t getIndexFromObjectWithValue(JsonObject* obj,JsonValue target){
+    if(obj == NULL){
+        return (size_t) -1;
+    }
+
+    for(size_t i = 0;i<obj->nbOfElement;i++){
+        if(isEqualValue(obj->listeOfPair[i].value,target)){
+            return i;
+        }
+    }
+    return (size_t) -1;
+}
+
+size_t getIndexFromArray(JsonArray* ary,JsonValue target){
+    if(ary == NULL){
+        return (size_t) -1;
+    }
+
+    for(size_t i = 0;i<ary->nbOfElement;i++){
+        if(isEqualValue(ary->listeOfValue[i],target)){
+            return i;
+        }
+    }
+    return (size_t) -1;
+}
+
 // Cherche une clé déjà échappée (forme stockée).
-// Pour addToObject / modifyObject, qui ont déjà échappé leur clé : passer par getIndexFromObject l'échapperait deux fois.
+// Pour addToObject / modifyObject, qui ont déjà échappé leur clé : passer par getIndexFromObjectWithKey l'échapperait deux fois.
 static size_t findKey(JsonObject* obj, char* storedKey, size_t* sortedPos){
     int found = 0;   // reste à 0 si bt_dichotomie s'arrête sur une erreur
     bt_dichotomie(obj->listeOfSortedKey, obj->nbOfElement, storedKey, sortedPos, &found);
@@ -996,6 +1025,73 @@ static size_t findKey(JsonObject* obj, char* storedKey, size_t* sortedPos){
         }
     }
     return (size_t)-1;
+}
+//////////////////////////////////////////// equal function ////////////////////////////////////////////
+int isEqualValue(JsonValue value1,JsonValue value2){
+    if(value1.type != value2.type){
+        return 0;
+    }
+
+    switch(value1.type){
+        case JSON_NULL:
+        case JSON_BOOL:
+        case JSON_NUMBER:
+            return value1.value.integer == value2.value.integer;
+        break;
+        case JSON_STRING:
+        case JSON_EXPONENTIAL:
+            if(bt_strcmp(value1.value.string,value2.value.string) == 0){
+                return 1;
+            }else{
+                return 0;
+            }
+        break;
+        case JSON_ARRAY:
+            return isEqualArray(value1.value.array,value2.value.array);
+        break;
+        case JSON_OBJECT:
+            return isEqualObject(value1.value.object,value2.value.object);
+        break;
+        case JSON_DECIMAL:
+            return value1.value.decimal == value2.value.decimal;
+        break;
+        case JSON_ERROR:
+            return 0;
+        break;
+    }
+    return 0;
+}
+
+int isEqualObject(JsonObject* object1,JsonObject* object2){
+    if(object1 == NULL || object2 == NULL){
+        return 0;
+    }
+    if(object1->nbOfElement != object2->nbOfElement){
+        return 0;
+    }
+
+    for(size_t i = 0;i<object1->nbOfElement;i++){
+        if(bt_strcmp(object1->listeOfPair[i].key,object2->listeOfPair[i].key) != 0 || isEqualValue(object1->listeOfPair[i].value,object2->listeOfPair[i].value) == 0){
+            return 0;
+        }
+    }
+    return 1;
+}
+
+int isEqualArray(JsonArray* array1,JsonArray* array2){
+    if(array1 == NULL || array2 == NULL){
+        return 0;
+    }
+    if(array1->nbOfElement != array2->nbOfElement){
+        return 0;
+    }
+
+    for(size_t i = 0;i<array1->nbOfElement;i++){
+        if(isEqualValue(array1->listeOfValue[i],array2->listeOfValue[i]) == 0){
+            return 0;
+        }
+    }
+    return 1;
 }
 
 //////////////////////////////////////////// validation function ////////////////////////////////////////////

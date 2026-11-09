@@ -104,13 +104,35 @@ int modifyArray(JsonArray* ary, JsonValue value, size_t index);              // 
 JsonValue* getValueFromObject(JsonObject* obj, char* key);
 
 // Index de la clé `key` (texte normal, comme getValueFromObject), ou (size_t)-1 si elle n'existe pas.
-size_t getIndexFromObject(JsonObject* obj, char* key);
+size_t getIndexFromObjectWithKey(JsonObject* obj, char* key);
+
+// Index de la première paire dont la valeur est égale à `target` (comparée avec isEqualValue), ou (size_t)-1 si aucune.
+// Parcourt les valeurs une par une : plus lent que la recherche par clé sur un gros objet.
+// `target` n'est ni copiée ni libérée : si elle vient d'un newJson...(), la libérer soi-même après.
+size_t getIndexFromObjectWithValue(JsonObject* obj, JsonValue target);
+
+// Index de la première valeur du tableau égale à `target` (comparée avec isEqualValue), ou (size_t)-1 si aucune.
+// Même règle pour `target` que getIndexFromObjectWithValue.
+size_t getIndexFromArray(JsonArray* ary, JsonValue target);
 
 // Décode une string stockée (forme JSON : \" \\ \n \u0041...) vers le texte réel, par exemple un mot de passe.
 // *dest doit valoir NULL : il reçoit une nouvelle chaîne, à effacer avec stringToZero puis libérer avec free.
 // Les \uXXXX sont décodés en UTF-8 (é, €, et les emojis écrits en paire \ud83d\ude00).
 // Renvoie 1 si src est NULL ou mal formée, si elle contient \u0000, ou une moitié de paire seule (\uD800..\uDFFF).
 int unescapeString(char** dest, char* src);
+
+//////////////////////////////////////////// comparaison ////////////////////////////////////////////
+// Renvoie 1 si les deux valeurs sont identiques, 0 sinon.
+// Attention : ici 1 veut dire VRAI (égales), pas erreur, contrairement aux autres fonctions qui renvoient un int.
+// Comparaison complète : les tableaux et objets sont comparés élément par élément, enfants compris.
+// Elle compare ce qui est stocké, pas le sens :
+//  - le type doit être le même : 1 (JSON_NUMBER) et 1.0 (JSON_DECIMAL) sont différents ;
+//  - strings et JSON_EXPONENTIAL sont comparés tels quels : "\u0041" et "A", ou 1e2 et 1E2, sont différents ;
+//  - l'ordre compte, dans les tableaux ET dans les objets : {"a":1,"b":2} et {"b":2,"a":1} sont différents ;
+//  - un JSON_ERROR, ou un tableau / objet NULL, n'est égal à rien (même pas à lui-même).
+int isEqualValue(JsonValue value1, JsonValue value2);
+int isEqualObject(JsonObject* object1, JsonObject* object2);   // pareil, pour deux objets
+int isEqualArray(JsonArray* array1, JsonArray* array2);        // pareil, pour deux tableaux
 
 //////////////////////////////////////////// copie ////////////////////////////////////////////
 // Copie complète (profonde). dest et src doivent être différents.
