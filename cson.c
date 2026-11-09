@@ -9,7 +9,7 @@
 #define JSON_MAX_DEPTH 512
 #define HEXA_TAB "0123456789abcdef"
 
-#define VERSION 2.1
+#define VERSION_CSON 2.1
 
 // Les types et les fonctions publiques sont dans cson.h.
 // Tout ce qui suit est interne : "static" les rend invisibles en dehors de ce fichier.

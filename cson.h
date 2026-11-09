@@ -1,5 +1,6 @@
 #ifndef CSON_H
 #define CSON_H
+#define VERSION_CSON 2.1
 
 // CSON : lecture, modification et écriture de JSON en C (voir README.md).
 // Seules les fonctions déclarées ici font partie de la bibliothèque.
